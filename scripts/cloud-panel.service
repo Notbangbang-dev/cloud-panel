@@ -1,0 +1,21 @@
+# Reference systemd unit (install.sh generates this automatically).
+# Copy to /etc/systemd/system/cloud-panel.service and adjust paths if needed.
+[Unit]
+Description=Cloud Panel — game server management
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloudpanel
+WorkingDirectory=/opt/cloud-panel
+EnvironmentFile=/opt/cloud-panel/.env
+ExecStart=/usr/bin/node /opt/cloud-panel/src/server.js
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+NoNewPrivileges=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

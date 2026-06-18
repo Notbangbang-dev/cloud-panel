@@ -1,0 +1,38 @@
+{
+  "name": "cloud-panel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloud Panel — an insane Pterodactyl-style game server management panel (PufferPanel ports: web 8080, SFTP 5657).",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "setup": "node src/scripts/setup.js",
+    "user": "node src/scripts/user.js",
+    "reset": "node src/scripts/reset.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "pidusage": "^3.0.2",
+    "ssh2": "^1.15.0",
+    "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.8.1"
+  },
+  "keywords": [
+    "game-server",
+    "panel",
+    "pterodactyl",
+    "pufferpanel",
+    "cloud-panel"
+  ],
+  "author": "Cloud Panel",
+  "license": "MIT"
+}
