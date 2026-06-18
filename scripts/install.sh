@@ -116,7 +116,12 @@ REPO_URL="${CP_REPO_URL:-$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/nul
 [ -z "$REPO_URL" ] && REPO_URL="https://github.com/Notbangbang-dev/cloud-panel.git"
 echo "$REPO_URL" > "$APP_DIR/.repo-url"
 chown "$RUN_USER":"$RUN_USER" "$APP_DIR/.repo-url"
-ln -sf "$APP_DIR/scripts/update.sh" /usr/local/bin/cloud-panel-update
+mkdir -p /usr/local/bin
+cat > /usr/local/bin/cloud-panel-update <<EOF
+#!/usr/bin/env bash
+exec bash "$APP_DIR/scripts/update.sh" "\$@"
+EOF
+chmod 755 /usr/local/bin/cloud-panel-update
 ok "Update command ready:  sudo cloud-panel-update"
 
 say "Installing npm dependencies (this compiles better-sqlite3)…"

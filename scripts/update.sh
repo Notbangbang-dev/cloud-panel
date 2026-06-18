@@ -23,7 +23,14 @@ die()  { echo -e "${c_r}✗ $*${c_0}" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "Run as root:  sudo cloud-panel-update   (or: sudo bash $APP_DIR/scripts/update.sh)"
 [ -d "$APP_DIR" ] || die "Cloud Panel is not installed at $APP_DIR (set CP_APP_DIR to override)."
 
-ensure_link() { ln -sf "$APP_DIR/scripts/update.sh" /usr/local/bin/cloud-panel-update 2>/dev/null || true; }
+ensure_link() {
+  mkdir -p /usr/local/bin
+  cat > /usr/local/bin/cloud-panel-update <<EOF
+#!/usr/bin/env bash
+exec bash "$APP_DIR/scripts/update.sh" "\$@"
+EOF
+  chmod 755 /usr/local/bin/cloud-panel-update
+}
 resolve_repo() {
   if [ -n "${CP_REPO_URL:-}" ]; then echo "$CP_REPO_URL"; return; fi
   if [ -s "$APP_DIR/.repo-url" ]; then cat "$APP_DIR/.repo-url"; return; fi
