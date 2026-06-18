@@ -97,8 +97,14 @@ database & backups, reinstalls deps and restarts (no installer re-run):
 sudo cloud-panel-update
 ```
 
-> First time only (to install the `cloud-panel-update` command):
-> `cd ~/cloud-panel && git pull && sudo bash scripts/update.sh`
+First time only — installs the global `cloud-panel-update` command on any
+existing install (works no matter how it was deployed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Notbangbang-dev/cloud-panel/main/scripts/update.sh | sudo bash
+```
+
+After that, every user (with sudo) can run `sudo cloud-panel-update` anytime.
 
 > Put Cloud Panel behind Nginx/Caddy + TLS for a production domain; proxy
 > `http://127.0.0.1:8080` and keep port 5657 open for SFTP.
