@@ -8,6 +8,7 @@
   const TABS = [
     { id: 'console', label: 'Console', icon: 'terminal' },
     { id: 'files', label: 'Files', icon: 'folder' },
+    { id: 'backups', label: 'Backups', icon: 'box' },
     { id: 'network', label: 'Network', icon: 'network' },
     { id: 'startup', label: 'Startup', icon: 'sliders' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
@@ -98,7 +99,7 @@
     function renderTab() {
       S.term = null; S.tiles = null;
       CP.clear(content);
-      const fn = { console: tabConsole, files: tabFiles, network: tabNetwork, startup: tabStartup, settings: tabSettings }[S.activeTab];
+      const fn = { console: tabConsole, files: tabFiles, backups: tabBackups, network: tabNetwork, startup: tabStartup, settings: tabSettings }[S.activeTab];
       fn(S, content, ctx);
     }
     renderTab();
@@ -356,6 +357,71 @@
         'Drag & drop files here to upload, or use the buttons. Upload a .zip then hit Extract. SFTP details are on the Network tab.'),
       uploadBar,
       tableWrap
+    );
+    load();
+  }
+
+  /* ============================ BACKUPS ============================ */
+  function tabBackups(S, root) {
+    const wrap = h('div', { class: 'card', style: { padding: 0, overflow: 'hidden' } });
+    const quotaNote = h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } }, 'Snapshots of your server files. Restore or download them anytime.');
+
+    async function loadQuota() {
+      try {
+        const d = (await CP.api.accountResources()).data;
+        quotaNote.textContent = `Backup slots: ${Math.max(0, d.available.backups)} free of ${d.quota.backups}. ${d.economyEnabled ? 'Buy more in the Shop.' : ''}`;
+      } catch { /* ignore */ }
+    }
+
+    async function load() {
+      CP.clear(wrap); wrap.appendChild(CP.spinner('Loading backups…'));
+      try {
+        const list = (await CP.api.backups(S.server.id)).data;
+        CP.clear(wrap);
+        if (!list.length) { wrap.appendChild(CP.empty('box', 'No backups yet — create one to snapshot your files.')); }
+        else {
+          const tbody = h('tbody');
+          list.forEach((b) => tbody.appendChild(h('tr', {},
+            h('td', {}, h('div', { class: 'fm-name file', html: `${icon('box', 16)} ${CP.esc(b.name)}` })),
+            h('td', { class: 'muted mono nowrap' }, fmt.bytes(b.sizeBytes)),
+            h('td', { class: 'muted nowrap' }, fmt.rel(b.createdAt)),
+            h('td', {}, h('div', { class: 'row-actions' },
+              h('button', { class: 'btn sm ghost icon', title: 'Restore', html: icon('restart', 14), onclick: () => restore(b) }),
+              h('a', { class: 'btn sm ghost icon', title: 'Download', href: CP.api.backupDownloadUrl(S.server.id, b.id), target: '_blank', rel: 'noopener', html: icon('save', 14) }),
+              h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => del(b) })))
+          )));
+          wrap.appendChild(h('table', { class: 'tbl' },
+            h('thead', {}, h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Size'), h('th', {}, 'Created'), h('th', { class: 'right' }, 'Actions'))), tbody));
+        }
+      } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
+      loadQuota();
+    }
+
+    async function createBackup() {
+      const name = await CP.ui.prompt({ title: 'Create backup', label: 'Name (optional)', placeholder: 'before-update' });
+      if (name === null) return;
+      CP.ui.toast('Creating backup…', 'info');
+      try { await CP.api.createBackup(S.server.id, name); CP.ui.toast('Backup created', 'ok'); load(); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+    async function restore(b) {
+      if (!(await CP.ui.confirm({ title: 'Restore backup', message: `Restore "${b.name}"? Files in the backup will overwrite the current ones.`, confirmText: 'Restore', danger: false }))) return;
+      try { const r = await CP.api.restoreBackup(S.server.id, b.id); CP.ui.toast(`Restored ${r.restored} file(s)`, 'ok'); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+    async function del(b) {
+      if (!(await CP.ui.confirm({ title: 'Delete backup', message: `Delete "${b.name}"? This frees a backup slot.`, confirmText: 'Delete' }))) return;
+      try { await CP.api.deleteBackup(S.server.id, b.id); CP.ui.toast('Backup deleted', 'ok'); load(); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+
+    root.append(
+      h('div', { class: 'fm-bar' },
+        h('div', { class: 'section-title', style: { margin: 0 } }, 'Backups'),
+        h('div', { style: { flex: 1 } }),
+        h('button', { class: 'btn sm', html: `${icon('refresh', 14)} Refresh`, onclick: load }),
+        h('button', { class: 'btn sm primary', html: `${icon('box', 14)} Create Backup`, onclick: createBackup })),
+      quotaNote, wrap
     );
     load();
   }

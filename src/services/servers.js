@@ -8,17 +8,19 @@ const pm = require('./processManager');
 
 function usedResources(userId) {
   const servers = db.filter('servers', (s) => s.ownerId === userId);
+  const ids = new Set(servers.map((s) => s.id));
   return {
     memory: servers.reduce((a, s) => a + (s.limits?.memory || 0), 0),
     cpu: servers.reduce((a, s) => a + (s.limits?.cpu || 0), 0),
     disk: servers.reduce((a, s) => a + (s.limits?.disk || 0), 0),
     servers: servers.length,
+    backups: db.filter('backups', (b) => ids.has(b.serverId)).length,
   };
 }
 
 function quotaFor(user) {
   const q = user.resources || {};
-  return { memory: q.memory || 0, cpu: q.cpu || 0, disk: q.disk || 0, servers: q.servers || 0 };
+  return { memory: q.memory || 0, cpu: q.cpu || 0, disk: q.disk || 0, servers: q.servers || 0, backups: q.backups || 0 };
 }
 
 function availableResources(user) {
@@ -29,6 +31,7 @@ function availableResources(user) {
     cpu: q.cpu - used.cpu,
     disk: q.disk - used.disk,
     servers: q.servers - used.servers,
+    backups: q.backups - used.backups,
   };
 }
 

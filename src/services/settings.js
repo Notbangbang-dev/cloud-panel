@@ -41,11 +41,11 @@ function update(patch = {}) {
   cur.afk.enabled = !!cur.afk.enabled;
   cur.afk.coins = num(cur.afk.coins);
   cur.afk.intervalSeconds = Math.max(5, num(cur.afk.intervalSeconds)); // never below 5s
-  for (const key of ['coins', 'memory', 'cpu', 'disk', 'servers'])
+  for (const key of ['coins', 'memory', 'cpu', 'disk', 'servers', 'backups'])
     cur.defaults[key] = num(cur.defaults[key]);
   for (const key of ['minMemory', 'minCpu', 'minDisk'])
     cur.limits[key] = num(cur.limits[key]);
-  for (const r of ['memory', 'cpu', 'disk', 'servers']) {
+  for (const r of ['memory', 'cpu', 'disk', 'servers', 'backups']) {
     if (!cur.shop[r]) continue;
     cur.shop[r].price = num(cur.shop[r].price);
     cur.shop[r].amount = num(cur.shop[r].amount, 1);

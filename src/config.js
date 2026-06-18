@@ -101,6 +101,8 @@ const config = {
   forceJsonStore: process.env.CP_FORCE_JSON === '1',
   // Per-server file storage lives here: <volumesDir>/<serverId>
   volumesDir: process.env.CP_VOLUMES_DIR || path.join(DATA_DIR, 'volumes'),
+  // Per-server backups (zip snapshots): <backupsDir>/<serverId>/<backupId>.zip
+  backupsDir: process.env.CP_BACKUPS_DIR || path.join(DATA_DIR, 'backups'),
   hostKeyFile:
     process.env.CP_SFTP_HOSTKEY || path.join(DATA_DIR, 'sftp_host.key'),
 

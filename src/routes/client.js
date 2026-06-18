@@ -7,6 +7,7 @@ const pm = require('../services/processManager');
 const files = require('../services/files');
 const settings = require('../services/settings');
 const serversSvc = require('../services/servers');
+const backups = require('../services/backups');
 const { canAccessServer, serializeServer, serializeAllocation } = require('./helpers');
 
 const router = express.Router();
@@ -75,6 +76,7 @@ router.get('/account/resources', (req, res) => {
         cpu: quota.cpu - used.cpu,
         disk: quota.disk - used.disk,
         servers: quota.servers - used.servers,
+        backups: quota.backups - used.backups,
       },
       economyEnabled: settings.economyEnabled(),
     },
@@ -297,6 +299,48 @@ router.post('/servers/:id/files/unzip', loadServer, async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+// ---- Backups --------------------------------------------------------------
+
+const serializeBackup = (b) => ({ id: b.id, name: b.name, sizeBytes: b.sizeBytes || 0, createdAt: b.createdAt });
+
+router.get('/servers/:id/backups', loadServer, (req, res) => {
+  res.json({ data: backups.list(req.server.id).map(serializeBackup) });
+});
+
+router.post('/servers/:id/backups', loadServer, activeRequired, (req, res) => {
+  // Quota counts against the server owner (admins bypass).
+  if (!req.user.admin) {
+    const owner = db.get('users', req.server.ownerId) || req.user;
+    if (serversSvc.availableResources(owner).backups < 1)
+      return res.status(403).json({ error: 'No backup slots left — buy more in the shop or delete an old backup.' });
+  }
+  let rec;
+  try { rec = backups.create(req.server, { name: (req.body || {}).name, createdBy: req.user.id }); }
+  catch (err) { return res.status(500).json({ error: err.message }); }
+  db.log({ type: 'backup', userId: req.user.id, serverId: req.server.id, message: `Backup '${rec.name}' created` });
+  res.status(201).json({ data: serializeBackup(rec) });
+});
+
+router.post('/servers/:id/backups/:bid/restore', loadServer, async (req, res) => {
+  try {
+    const result = await backups.restore(req.server, req.params.bid);
+    db.log({ type: 'backup', userId: req.user.id, serverId: req.server.id, message: 'Backup restored' });
+    res.json({ ok: true, ...result });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.get('/servers/:id/backups/:bid/download', loadServer, (req, res) => {
+  const b = backups.get(req.server.id, req.params.bid);
+  if (!b) return res.status(404).json({ error: 'Backup not found' });
+  res.download(backups.backupFile(req.server.id, b.id), `${b.name}.zip`);
+});
+
+router.delete('/servers/:id/backups/:bid', loadServer, async (req, res) => {
+  const removed = await backups.remove(req.server.id, req.params.bid);
+  if (!removed) return res.status(404).json({ error: 'Backup not found' });
+  res.json({ ok: true });
 });
 
 // ---- Network / allocations ------------------------------------------------

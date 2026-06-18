@@ -57,6 +57,13 @@
     },
     unzip(serverId, path) { return this.post(`/servers/${serverId}/files/unzip`, { path }); },
 
+    /* backups */
+    backups(serverId) { return this.get(`/servers/${serverId}/backups`); },
+    createBackup(serverId, name) { return this.post(`/servers/${serverId}/backups`, { name }); },
+    restoreBackup(serverId, bid) { return this.post(`/servers/${serverId}/backups/${bid}/restore`); },
+    deleteBackup(serverId, bid) { return this.del(`/servers/${serverId}/backups/${bid}`); },
+    backupDownloadUrl(serverId, bid) { return `/api/servers/${serverId}/backups/${bid}/download?token=${encodeURIComponent(this.token || '')}`; },
+
     /* auth */
     login(login, password) { return this.post('/auth/login', { login, password }); },
     me() { return this.get('/auth/me'); },

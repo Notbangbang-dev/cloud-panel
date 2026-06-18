@@ -16,13 +16,13 @@ const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 
-const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings'];
+const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings', 'backups'];
 
 /** Global, admin-editable settings (economy, registration, defaults, shop). */
 const SETTINGS_DEFAULTS = {
   economy: { enabled: true },
   registration: { enabled: true, requireApproval: true },
-  defaults: { coins: 500, memory: 2048, cpu: 150, disk: 10240, servers: 2 },
+  defaults: { coins: 500, memory: 2048, cpu: 150, disk: 10240, servers: 2, backups: 1 },
   limits: { minMemory: 256, minCpu: 25, minDisk: 1024 },
   afk: { enabled: true, coins: 1, intervalSeconds: 30 },
   shop: {
@@ -30,6 +30,7 @@ const SETTINGS_DEFAULTS = {
     cpu: { price: 150, amount: 50 },
     disk: { price: 60, amount: 5120 },
     servers: { price: 400, amount: 1 },
+    backups: { price: 250, amount: 1 },
   },
 };
 
@@ -409,7 +410,9 @@ function migrateUsers() {
     if (u.status === undefined) patch.status = 'active';
     if (u.coins === undefined) patch.coins = d.coins;
     if (!u.resources || typeof u.resources !== 'object')
-      patch.resources = { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers };
+      patch.resources = { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers, backups: d.backups };
+    else if (u.resources.backups === undefined)
+      patch.resources = { ...u.resources, backups: d.backups }; // backfill new backups quota
     if (Object.keys(patch).length) backend.update('users', u.id, patch);
   }
 }

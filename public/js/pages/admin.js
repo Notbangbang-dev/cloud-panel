@@ -307,6 +307,7 @@
     const cpu = h('input', { type: 'number', value: r.cpu || 0 });
     const disk = h('input', { type: 'number', value: r.disk || 0 });
     const slots = h('input', { type: 'number', value: r.servers || 0 });
+    const backupsQ = h('input', { type: 'number', value: r.backups || 0 });
 
     const body = h('div', {},
       h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 16px' } },
@@ -318,11 +319,12 @@
         h('label', { class: 'field' }, h('span', {}, 'Coins'), coins)),
       h('label', { style: { display: 'flex', alignItems: 'center', gap: '10px', margin: '2px 0 8px', cursor: 'pointer' } }, admin, h('span', { class: 'muted' }, 'Administrator (full access)')),
       h('div', { class: 'section-title', style: { margin: '10px 0 6px' } }, 'Resource quota'),
-      h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 12px' } },
+      h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '0 12px' } },
         h('label', { class: 'field' }, h('span', {}, 'RAM (MB)'), mem),
         h('label', { class: 'field' }, h('span', {}, 'CPU (%)'), cpu),
         h('label', { class: 'field' }, h('span', {}, 'Disk (MB)'), disk),
-        h('label', { class: 'field' }, h('span', {}, 'Slots'), slots)));
+        h('label', { class: 'field' }, h('span', {}, 'Slots'), slots),
+        h('label', { class: 'field' }, h('span', {}, 'Backups'), backupsQ)));
 
     const ref = CP.ui.modal({ title: `Edit ${u.username}`, size: 'lg', body, footer: [
       h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
@@ -330,7 +332,7 @@
         const patch = {
           email: email.value, firstName: first.value, lastName: last.value, admin: admin.checked,
           status: status.value, coins: +coins.value,
-          resources: { memory: +mem.value, cpu: +cpu.value, disk: +disk.value, servers: +slots.value },
+          resources: { memory: +mem.value, cpu: +cpu.value, disk: +disk.value, servers: +slots.value, backups: +backupsQ.value },
         };
         if (password.value) patch.password = password.value;
         try { await CP.api.request('PATCH', `/admin/users/${u.id}`, patch); CP.ui.toast('User updated', 'ok'); ref.close(); done(); }
@@ -359,10 +361,10 @@
     const econEnabled = sw(s.economy.enabled);
     const regEnabled = sw(s.registration.enabled);
     const regApproval = sw(s.registration.requireApproval);
-    const dCoins = numIn(s.defaults.coins), dMem = numIn(s.defaults.memory), dCpu = numIn(s.defaults.cpu), dDisk = numIn(s.defaults.disk), dServers = numIn(s.defaults.servers);
+    const dCoins = numIn(s.defaults.coins), dMem = numIn(s.defaults.memory), dCpu = numIn(s.defaults.cpu), dDisk = numIn(s.defaults.disk), dServers = numIn(s.defaults.servers), dBackups = numIn(s.defaults.backups);
     const minMem = numIn(s.limits.minMemory), minCpu = numIn(s.limits.minCpu), minDisk = numIn(s.limits.minDisk);
     const shop = {};
-    ['memory', 'cpu', 'disk', 'servers'].forEach((k) => { shop[k] = { price: numIn(s.shop[k].price), amount: numIn(s.shop[k].amount) }; });
+    ['memory', 'cpu', 'disk', 'servers', 'backups'].forEach((k) => { shop[k] = { price: numIn(s.shop[k].price), amount: numIn(s.shop[k].amount) }; });
     const afkOn = sw(s.afk && s.afk.enabled);
     const afkCoins = numIn(s.afk ? s.afk.coins : 1);
     const afkInterval = numIn(s.afk ? s.afk.intervalSeconds : 30);
@@ -376,13 +378,14 @@
       const patch = {
         economy: { enabled: econEnabled.checked },
         registration: { enabled: regEnabled.checked, requireApproval: regApproval.checked },
-        defaults: { coins: +dCoins.value, memory: +dMem.value, cpu: +dCpu.value, disk: +dDisk.value, servers: +dServers.value },
+        defaults: { coins: +dCoins.value, memory: +dMem.value, cpu: +dCpu.value, disk: +dDisk.value, servers: +dServers.value, backups: +dBackups.value },
         limits: { minMemory: +minMem.value, minCpu: +minCpu.value, minDisk: +minDisk.value },
         shop: {
           memory: { price: +shop.memory.price.value, amount: +shop.memory.amount.value },
           cpu: { price: +shop.cpu.price.value, amount: +shop.cpu.amount.value },
           disk: { price: +shop.disk.price.value, amount: +shop.disk.amount.value },
           servers: { price: +shop.servers.price.value, amount: +shop.servers.amount.value },
+          backups: { price: +shop.backups.price.value, amount: +shop.backups.amount.value },
         },
         afk: { enabled: afkOn.checked, coins: +afkCoins.value, intervalSeconds: +afkInterval.value },
       };
@@ -402,7 +405,7 @@
           h('h3', { html: `${icon('zap', 16)} New-user defaults` }),
           h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px', marginTop: '8px' } },
             field('Starting coins', dCoins), field('Server slots', dServers),
-            field('RAM (MB)', dMem), field('CPU (%)', dCpu), field('Disk (MB)', dDisk))),
+            field('RAM (MB)', dMem), field('CPU (%)', dCpu), field('Disk (MB)', dDisk), field('Backups', dBackups))),
         h('div', { class: 'card' },
           h('h3', { html: `${icon('sliders', 16)} Minimum per server` }),
           h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px', marginTop: '8px' } },
@@ -417,7 +420,8 @@
         h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 14px' } }, 'Each purchase costs the price (coins) and grants the amount to the buyer\'s quota.'),
         h('div', { style: { display: 'grid', gap: '8px' } },
           shopRow('RAM', 'MB', shop.memory), shopRow('CPU', '%', shop.cpu),
-          shopRow('Disk', 'MB', shop.disk), shopRow('Server Slot', 'slots', shop.servers))),
+          shopRow('Disk', 'MB', shop.disk), shopRow('Server Slot', 'slots', shop.servers),
+          shopRow('Backup Slot', 'slots', shop.backups))),
       h('div', { style: { marginTop: '18px' } }, save)
     );
   }

@@ -8,6 +8,7 @@ const config = require('../config');
 const pm = require('../services/processManager');
 const users = require('../services/users');
 const settings = require('../services/settings');
+const backups = require('../services/backups');
 const { serializeServer, serializeNode } = require('./helpers');
 
 const router = express.Router();
@@ -73,6 +74,7 @@ router.patch('/users/:id', (req, res) => {
       cpu: Math.max(0, Math.floor(Number(resources.cpu ?? user.resources?.cpu) || 0)),
       disk: Math.max(0, Math.floor(Number(resources.disk ?? user.resources?.disk) || 0)),
       servers: Math.max(0, Math.floor(Number(resources.servers ?? user.resources?.servers) || 0)),
+      backups: Math.max(0, Math.floor(Number(resources.backups ?? user.resources?.backups) || 0)),
     };
   }
   res.json({ data: auth.publicUser(db.update('users', user.id, patch)) });
@@ -330,6 +332,7 @@ router.delete('/servers/:id', async (req, res) => {
   [server.allocationId, ...(server.additionalAllocationIds || [])].forEach((id) => {
     if (db.get('allocations', id)) db.update('allocations', id, { serverId: null, primary: false });
   });
+  await backups.removeAllForServer(server.id);
   db.remove('servers', server.id);
   db.log({ type: 'admin', userId: req.user.id, message: `Deleted server ${server.name}` });
   res.json({ ok: true });
