@@ -363,6 +363,9 @@
     const minMem = numIn(s.limits.minMemory), minCpu = numIn(s.limits.minCpu), minDisk = numIn(s.limits.minDisk);
     const shop = {};
     ['memory', 'cpu', 'disk', 'servers'].forEach((k) => { shop[k] = { price: numIn(s.shop[k].price), amount: numIn(s.shop[k].amount) }; });
+    const afkOn = sw(s.afk && s.afk.enabled);
+    const afkCoins = numIn(s.afk ? s.afk.coins : 1);
+    const afkInterval = numIn(s.afk ? s.afk.intervalSeconds : 30);
 
     const shopRow = (label, unit, o) => h('div', { class: 'grid', style: { gridTemplateColumns: '120px 1fr 1fr', gap: '0 12px', alignItems: 'end' } },
       h('div', { style: { paddingBottom: '12px', fontWeight: '700' } }, label),
@@ -381,8 +384,9 @@
           disk: { price: +shop.disk.price.value, amount: +shop.disk.amount.value },
           servers: { price: +shop.servers.price.value, amount: +shop.servers.amount.value },
         },
+        afk: { enabled: afkOn.checked, coins: +afkCoins.value, intervalSeconds: +afkInterval.value },
       };
-      try { await CP.api.adminUpdateSettings(patch); CP.app.economyEnabled = patch.economy.enabled; CP.ui.toast('Settings saved', 'ok'); }
+      try { await CP.api.adminUpdateSettings(patch); CP.app.economyEnabled = patch.economy.enabled; CP.app.afkEnabled = patch.economy.enabled && patch.afk.enabled; CP.ui.toast('Settings saved', 'ok'); }
       catch (e) { CP.ui.toast(e.message, 'err'); }
     };
 
@@ -402,7 +406,12 @@
         h('div', { class: 'card' },
           h('h3', { html: `${icon('sliders', 16)} Minimum per server` }),
           h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px', marginTop: '8px' } },
-            field('Min RAM (MB)', minMem), field('Min CPU (%)', minCpu), field('Min Disk (MB)', minDisk)))),
+            field('Min RAM (MB)', minMem), field('Min CPU (%)', minCpu), field('Min Disk (MB)', minDisk))),
+        h('div', { class: 'card' },
+          h('h3', { html: `${icon('coin', 16)} AFK rewards` }),
+          h('div', { style: { marginTop: '8px' } }, switchRow('Enable AFK page', 'Earn coins by staying on the AFK page.', afkOn)),
+          h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px', marginTop: '8px' } },
+            field('Coins per tick', afkCoins), field('Interval (seconds)', afkInterval)))),
       h('div', { class: 'card', style: { marginTop: '18px' } },
         h('h3', { html: `${icon('cart', 16)} Shop prices & amounts` }),
         h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 14px' } }, 'Each purchase costs the price (coins) and grants the amount to the buyer\'s quota.'),

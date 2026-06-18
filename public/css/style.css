@@ -458,3 +458,19 @@ input.switch { appearance: none; -webkit-appearance: none; width: 44px; height: 
 input.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left 0.2s; }
 input.switch:checked { background: var(--indigo); }
 input.switch:checked::after { left: 23px; }
+
+/* ---- AFK page ---- */
+.afk-card { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; padding: 32px; }
+.afk-ring { width: 200px; height: 200px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--cyan) 0deg, rgba(255,255,255,0.08) 0); transition: background 0.6s linear; flex: 0 0 200px; }
+.afk-ring-inner { width: 168px; height: 168px; border-radius: 50%; background: var(--bg-2); display: grid; place-items: center; text-align: center; box-shadow: inset 0 0 40px rgba(0,0,0,0.5); }
+.afk-moon { font-size: 34px; line-height: 1; }
+.afk-count { font-size: 30px; font-weight: 850; font-family: var(--mono); margin-top: 4px; }
+.afk-count-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+.afk-info { flex: 1; min-width: 220px; }
+.afk-balance { display: inline-flex; align-items: center; gap: 8px; font-size: 24px; }
+.afk-balance svg { color: #fbbf24; }
+.afk-balance b { font-family: var(--mono); }
+.afk-earned-wrap { margin: 6px 0 10px; }
+.afk-earned { display: inline-block; color: var(--green); font-weight: 700; font-family: var(--mono); transition: transform 0.2s; }
+.afk-earned.pop { transform: scale(1.25); }
+@media (max-width: 640px) { .afk-card { justify-content: center; text-align: center; } .afk-info { text-align: center; } }

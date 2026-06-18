@@ -9,6 +9,7 @@ const defaults = () => get().defaults;
 const economyEnabled = () => !!get().economy.enabled;
 const registrationEnabled = () => !!get().registration.enabled;
 const requireApproval = () => !!get().registration.requireApproval;
+const afkEnabled = () => !!(get().afk && get().afk.enabled);
 
 function deepMerge(target, patch) {
   for (const k of Object.keys(patch)) {
@@ -28,7 +29,7 @@ const num = (v, min = 0) => Math.max(min, Math.floor(Number(v) || 0));
 /** Apply a (partial) settings patch with whitelisting + coercion. */
 function update(patch = {}) {
   const cur = JSON.parse(JSON.stringify(get()));
-  const allowed = ['economy', 'registration', 'defaults', 'limits', 'shop'];
+  const allowed = ['economy', 'registration', 'defaults', 'limits', 'shop', 'afk'];
   const clean = {};
   for (const k of allowed) if (patch[k] !== undefined) clean[k] = patch[k];
   deepMerge(cur, clean);
@@ -36,6 +37,10 @@ function update(patch = {}) {
   cur.economy.enabled = !!cur.economy.enabled;
   cur.registration.enabled = !!cur.registration.enabled;
   cur.registration.requireApproval = !!cur.registration.requireApproval;
+  if (!cur.afk) cur.afk = {};
+  cur.afk.enabled = !!cur.afk.enabled;
+  cur.afk.coins = num(cur.afk.coins);
+  cur.afk.intervalSeconds = Math.max(5, num(cur.afk.intervalSeconds)); // never below 5s
   for (const key of ['coins', 'memory', 'cpu', 'disk', 'servers'])
     cur.defaults[key] = num(cur.defaults[key]);
   for (const key of ['minMemory', 'minCpu', 'minDisk'])

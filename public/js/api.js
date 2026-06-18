@@ -57,6 +57,8 @@
     createServer(payload) { return this.post('/servers', payload); },
     shop() { return this.get('/shop'); },
     shopBuy(resource, quantity) { return this.post('/shop/buy', { resource, quantity }); },
+    afkInfo() { return this.get('/afk'); },
+    afkHeartbeat() { return this.post('/afk/heartbeat'); },
 
     /* admin economy/access */
     adminSettings() { return this.get('/admin/settings'); },

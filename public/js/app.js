@@ -14,6 +14,7 @@
     user: null,
     needsSetup: false,
     economyEnabled: false,
+    afkEnabled: false,
     ports: { web: 8080, sftp: 5657 },
     brand: { name: 'Cloud Panel', tagline: 'Deploy. Scale. Dominate.' },
     _cleanups: [],
@@ -54,6 +55,7 @@
           const me = await CP.api.me();
           this.user = me.user;
           this.economyEnabled = !!me.economyEnabled;
+          this.afkEnabled = !!me.afkEnabled;
         } catch { CP.api.token = null; }
       }
 
@@ -73,6 +75,7 @@
       if (head === 'admin') return { route: 'admin', params: { tab: rest[0] } };
       if (head === 'account') return { route: 'account', params: {} };
       if (head === 'shop') return { route: 'shop', params: {} };
+      if (head === 'afk') return { route: 'afk', params: {} };
       if (head === 'login') return { route: 'login', params: {} };
       return { route: 'dashboard', params: {} };
     },
@@ -124,6 +127,7 @@
 
       const navDefs = [{ route: 'dashboard', label: 'Dashboard', icon: 'dashboard', path: '/' }];
       if (this.economyEnabled) navDefs.push({ route: 'shop', label: 'Shop', icon: 'cart', path: '/shop' });
+      if (this.afkEnabled) navDefs.push({ route: 'afk', label: 'AFK', icon: 'coin', path: '/afk' });
       navDefs.push({ route: 'account', label: 'Account', icon: 'settings', path: '/account' });
       const navItems = navDefs.map((n) =>
         h('div', { class: 'nav-item', dataset: { route: n.route }, html: `${icon(n.icon, 18)}<span>${n.label}</span>`, onclick: () => this.go(n.path) }));

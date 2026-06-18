@@ -24,6 +24,7 @@ const SETTINGS_DEFAULTS = {
   registration: { enabled: true, requireApproval: true },
   defaults: { coins: 500, memory: 2048, cpu: 150, disk: 10240, servers: 2 },
   limits: { minMemory: 256, minCpu: 25, minDisk: 1024 },
+  afk: { enabled: true, coins: 1, intervalSeconds: 30 },
   shop: {
     memory: { price: 100, amount: 1024 },
     cpu: { price: 150, amount: 50 },

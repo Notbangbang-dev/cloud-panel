@@ -20,6 +20,7 @@ router.get('/config', (req, res) => {
     registrationEnabled: settings.registrationEnabled(),
     requireApproval: settings.requireApproval(),
     economyEnabled: settings.economyEnabled(),
+    afkEnabled: settings.economyEnabled() && settings.afkEnabled(),
   });
 });
 
@@ -65,6 +66,7 @@ router.get('/me', auth.authRequired, (req, res) => {
     user: auth.publicUser(req.user),
     brand: config.brand,
     economyEnabled: settings.economyEnabled(),
+    afkEnabled: settings.economyEnabled() && settings.afkEnabled(),
   });
 });
 
