@@ -135,6 +135,57 @@ async function remove(server, rel) {
   return true;
 }
 
+const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // 2 GB per file
+
+/** Stream an upload (request body) to a file, safely, with a size cap. */
+function saveStream(server, rel, readable, { maxBytes = MAX_UPLOAD } = {}) {
+  return new Promise((res, rej) => {
+    let abs;
+    try { abs = resolve(server, rel); } catch (e) { return rej(e); }
+    if (abs === rootFor(server)) return rej(new Error('Invalid file name'));
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    const ws = fs.createWriteStream(abs);
+    let bytes = 0, failed = false;
+    const fail = (err) => {
+      if (failed) return; failed = true;
+      try { ws.destroy(); } catch {}
+      try { readable.destroy(); } catch {}
+      fsp.rm(abs, { force: true }).catch(() => {});
+      rej(err);
+    };
+    readable.on('data', (c) => { bytes += c.length; if (bytes > maxBytes) fail(Object.assign(new Error('File exceeds the 2GB upload limit'), { code: 'TOO_LARGE' })); });
+    readable.on('error', fail);
+    ws.on('error', fail);
+    ws.on('finish', () => { if (!failed) res(toRel(server, abs)); });
+    readable.pipe(ws);
+  });
+}
+
+/** Extract a .zip into the folder it lives in (zip-slip protected). */
+async function unzip(server, rel) {
+  let AdmZip;
+  try { AdmZip = require('adm-zip'); }
+  catch { throw new Error('Zip extraction is unavailable — run "npm install" to add it.'); }
+  const abs = resolve(server, rel);
+  if (!/\.zip$/i.test(abs)) throw new Error('Not a .zip file');
+  const stat = await fsp.stat(abs);
+  if (!stat.isFile()) throw new Error('Not a file');
+
+  const baseRel = toRel(server, path.dirname(abs));
+  const zip = new AdmZip(abs);
+  let count = 0;
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue;
+    const targetRel = (baseRel === '/' ? '' : baseRel) + '/' + entry.entryName;
+    let target;
+    try { target = resolve(server, targetRel); } catch { continue; } // skip zip-slip entries
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+    await fsp.writeFile(target, entry.getData());
+    if (++count > 20000) throw new Error('Too many files in archive');
+  }
+  return { extracted: count, into: baseRel };
+}
+
 function guessMime(name) {
   const ext = path.extname(name).toLowerCase();
   const map = {
@@ -161,4 +212,4 @@ function guessMime(name) {
   return map[ext] || 'application/octet-stream';
 }
 
-module.exports = { rootFor, resolve, toRel, list, read, write, mkdir, rename, remove, diskUsage };
+module.exports = { rootFor, resolve, toRel, list, read, write, mkdir, rename, remove, diskUsage, saveStream, unzip };

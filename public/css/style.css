@@ -474,3 +474,9 @@ input.switch:checked::after { left: 23px; }
 .afk-earned { display: inline-block; color: var(--green); font-weight: 700; font-family: var(--mono); transition: transform 0.2s; }
 .afk-earned.pop { transform: scale(1.25); }
 @media (max-width: 640px) { .afk-card { justify-content: center; text-align: center; } .afk-info { text-align: center; } }
+
+/* ---- File uploads ---- */
+.upload-bar { border: 1px solid var(--border-strong); border-radius: 12px; padding: 11px 14px; margin-bottom: 12px; background: var(--surface); }
+.upload-label { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upload-bar .bar { height: 7px; }
+.card.dropping { outline: 2px dashed var(--cyan); outline-offset: -6px; background: rgba(34, 211, 238, 0.05); }

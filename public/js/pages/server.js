@@ -245,6 +245,7 @@
         h('td', { class: 'muted nowrap' }, fmt.rel(f.modifiedAt)),
         h('td', {}, h('div', { class: 'row-actions' },
           !f.directory ? h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => openEditor(full, f.name) }) : null,
+          !f.directory && /\.zip$/i.test(f.name) ? h('button', { class: 'btn sm ghost icon', title: 'Extract', html: icon('box', 14), onclick: () => extract(full, f.name) }) : null,
           h('button', { class: 'btn sm ghost icon', title: 'Rename', html: icon('sliders', 14), onclick: () => rename(full, f.name) }),
           h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => del(full, f.name) })
         ))
@@ -295,16 +296,65 @@
       catch (err) { CP.ui.toast(err.message, 'err'); }
     }
 
+    async function extract(full, name) {
+      if (!(await CP.ui.confirm({ title: 'Extract archive', message: `Extract "${name}" into this folder?`, confirmText: 'Extract', danger: false }))) return;
+      try { const r = await CP.api.unzip(S.server.id, full); CP.ui.toast(`Extracted ${r.extracted} file(s)`, 'ok'); load(); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+
+    // ---- Uploads (files, folders, drag & drop) ----
+    const upLabel = h('div', { class: 'upload-label' });
+    const upFill = h('i');
+    const uploadBar = h('div', { class: 'upload-bar' }, upLabel, h('div', { class: 'bar' }, upFill));
+    uploadBar.style.display = 'none';
+    const setUpload = (text, frac) => { if (text != null) upLabel.textContent = text; if (frac != null) upFill.style.width = Math.round(frac * 100) + '%'; };
+
+    async function uploadFiles(fileList, useRelative) {
+      const items = [...fileList].filter(Boolean);
+      if (!items.length) return;
+      uploadBar.style.display = '';
+      let failed = 0;
+      for (let i = 0; i < items.length; i++) {
+        const f = items[i];
+        const name = useRelative && f.webkitRelativePath ? f.webkitRelativePath : f.name;
+        setUpload(`Uploading ${name}  (${i + 1}/${items.length})`, 0);
+        try {
+          await CP.api.upload(S.server.id, join(name), f, (loaded, total) => setUpload(null, total ? loaded / total : 0));
+        } catch (err) { failed++; CP.ui.toast(`${f.name}: ${err.message}`, 'err'); }
+      }
+      uploadBar.style.display = 'none';
+      CP.ui.toast(`Uploaded ${items.length - failed}/${items.length} item(s)`, failed ? 'info' : 'ok');
+      load();
+    }
+
+    const fileInput = h('input', { type: 'file', multiple: true, style: { display: 'none' },
+      onchange: (e) => { uploadFiles(e.target.files, false); e.target.value = ''; } });
+    const folderInput = h('input', { type: 'file', style: { display: 'none' },
+      onchange: (e) => { uploadFiles(e.target.files, true); e.target.value = ''; } });
+    folderInput.setAttribute('webkitdirectory', '');
+    folderInput.setAttribute('directory', '');
+
+    tableWrap.addEventListener('dragover', (e) => { e.preventDefault(); tableWrap.classList.add('dropping'); });
+    tableWrap.addEventListener('dragleave', (e) => { if (e.target === tableWrap) tableWrap.classList.remove('dropping'); });
+    tableWrap.addEventListener('drop', (e) => {
+      e.preventDefault(); tableWrap.classList.remove('dropping');
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files, false);
+    });
+
     root.append(
       h('div', { class: 'fm-bar' },
         crumbs,
         h('div', { class: 'grow', style: { flex: 1 } }),
         h('button', { class: 'btn sm', html: `${icon('refresh', 14)} Refresh`, onclick: load }),
         h('button', { class: 'btn sm', html: `${icon('folder', 14)} New Folder`, onclick: newFolder }),
-        h('button', { class: 'btn sm primary', html: `${icon('plus', 14)} New File`, onclick: newFile })
+        h('button', { class: 'btn sm', html: `${icon('file', 14)} New File`, onclick: newFile }),
+        h('button', { class: 'btn sm', html: `${icon('folderOpen', 14)} Upload Folder`, onclick: () => folderInput.click() }),
+        h('button', { class: 'btn sm primary', html: `${icon('up', 14)} Upload`, onclick: () => fileInput.click() }),
+        fileInput, folderInput
       ),
-      h('p', { class: 'muted', style: { margin: '0 0 14px', fontSize: '13px' } },
-        'Tip: you can also connect over SFTP — see the Network tab for connection details.'),
+      h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
+        'Drag & drop files here to upload, or use the buttons. Upload a .zip then hit Extract. SFTP details are on the Network tab.'),
+      uploadBar,
       tableWrap
     );
     load();

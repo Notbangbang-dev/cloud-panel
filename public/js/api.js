@@ -39,6 +39,24 @@
       return res.text();
     },
 
+    /* streamed file upload with progress (XHR) */
+    upload(serverId, relPath, file, onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `/api/servers/${serverId}/files/upload?path=${encodeURIComponent(relPath)}`);
+        if (this.token) xhr.setRequestHeader('Authorization', 'Bearer ' + this.token);
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.upload.onprogress = (e) => { if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total); };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) { try { resolve(JSON.parse(xhr.responseText || '{}')); } catch { resolve({}); } }
+          else { let m = `Upload failed (${xhr.status})`; try { m = JSON.parse(xhr.responseText).error || m; } catch {} reject(new Error(m)); }
+        };
+        xhr.onerror = () => reject(new Error('Upload failed (network error)'));
+        xhr.send(file);
+      });
+    },
+    unzip(serverId, path) { return this.post(`/servers/${serverId}/files/unzip`, { path }); },
+
     /* auth */
     login(login, password) { return this.post('/auth/login', { login, password }); },
     me() { return this.get('/auth/me'); },

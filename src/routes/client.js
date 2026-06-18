@@ -278,6 +278,27 @@ router.post('/servers/:id/files/delete', loadServer, async (req, res) => {
   }
 });
 
+// Streamed upload: raw body -> file at ?path=. Used for files & folder uploads
+// (the client sends each file with its relative path).
+router.post('/servers/:id/files/upload', loadServer, async (req, res) => {
+  try {
+    const saved = await files.saveStream(req.server, req.query.path || '/', req);
+    res.json({ ok: true, path: saved });
+  } catch (err) {
+    res.status(err.code === 'TOO_LARGE' ? 413 : 400).json({ error: err.message });
+  }
+});
+
+// Extract an uploaded .zip in place.
+router.post('/servers/:id/files/unzip', loadServer, async (req, res) => {
+  try {
+    const result = await files.unzip(req.server, (req.body || {}).path);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // ---- Network / allocations ------------------------------------------------
 
 router.get('/servers/:id/allocations', loadServer, (req, res) => {
