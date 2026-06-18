@@ -86,9 +86,19 @@ When it finishes it prints your panel URL and the admin login it created. Manage
 ```bash
 systemctl status cloud-panel      # service state
 journalctl -u cloud-panel -f      # live logs
-sudo bash scripts/update.sh       # git pull + npm install + restart
+sudo cloud-panel-update           # update to the latest version (one command)
 sudo bash scripts/uninstall.sh    # remove (add --purge to delete data)
 ```
+
+**Updating** is a single command — it pulls the latest code, keeps your `.env`,
+database & backups, reinstalls deps and restarts (no installer re-run):
+
+```bash
+sudo cloud-panel-update
+```
+
+> First time only (to install the `cloud-panel-update` command):
+> `cd ~/cloud-panel && git pull && sudo bash scripts/update.sh`
 
 > Put Cloud Panel behind Nginx/Caddy + TLS for a production domain; proxy
 > `http://127.0.0.1:8080` and keep port 5657 open for SFTP.

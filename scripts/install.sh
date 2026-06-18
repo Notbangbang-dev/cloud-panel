@@ -111,6 +111,14 @@ fi
 chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
 ok "Files installed."
 
+# Record the source repo + install a one-command updater for the future.
+REPO_URL="${CP_REPO_URL:-$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || true)}"
+[ -z "$REPO_URL" ] && REPO_URL="https://github.com/Notbangbang-dev/cloud-panel.git"
+echo "$REPO_URL" > "$APP_DIR/.repo-url"
+chown "$RUN_USER":"$RUN_USER" "$APP_DIR/.repo-url"
+ln -sf "$APP_DIR/scripts/update.sh" /usr/local/bin/cloud-panel-update
+ok "Update command ready:  sudo cloud-panel-update"
+
 say "Installing npm dependencies (this compiles better-sqlite3)…"
 sudo -u "$RUN_USER" bash -lc "cd '$APP_DIR' && npm install --omit=dev --no-fund --no-audit"
 ok "Dependencies installed."
@@ -236,7 +244,7 @@ echo
 echo    "  There are NO default passwords. Keep your admin credentials safe."
 echo
 echo    "  Manage:  systemctl status ${SERVICE}   |   journalctl -u ${SERVICE} -f"
-echo    "  Update:  sudo bash ${APP_DIR}/scripts/update.sh"
+echo    "  Update:  sudo cloud-panel-update"
 echo    "  Users :  sudo -u ${RUN_USER} node ${APP_DIR}/src/scripts/user.js create --admin"
 echo
 systemctl --no-pager --lines=0 status "$SERVICE" || true
