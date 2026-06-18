@@ -55,4 +55,4 @@ function update(patch = {}) {
   return get();
 }
 
-module.exports = { get, defaults, economyEnabled, registrationEnabled, requireApproval, update };
+module.exports = { get, defaults, economyEnabled, registrationEnabled, requireApproval, afkEnabled, update };
