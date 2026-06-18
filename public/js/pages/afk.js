@@ -22,6 +22,8 @@
     let sessionEarned = 0;
     let remaining = interval;
     let stopped = false;
+    let locked = false;
+    const sid = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
     root.appendChild(h('div', { class: 'page-head' },
       h('div', {}, h('h2', { html: `${icon('coin', 22)} AFK Rewards` }),
@@ -65,9 +67,24 @@
       setTimeout(() => { moon.textContent = '🌙'; earnedEl.classList.remove('pop'); }, 800);
     };
 
+    const setLocked = (on) => {
+      if (locked === on) return;
+      locked = on;
+      ring.classList.toggle('locked', on);
+      if (on) {
+        moon.textContent = '🔒';
+        countdown.textContent = '—';
+        countLabel.textContent = 'open in another tab';
+        ring.style.background = 'conic-gradient(var(--faint) 360deg, var(--faint) 0)';
+      } else {
+        moon.textContent = '🌙';
+        countLabel.textContent = 'until next coin';
+      }
+    };
+
     // Local 1s countdown (re-synced from the server on each heartbeat).
     const countdownTimer = setInterval(() => {
-      if (stopped) return;
+      if (stopped || locked) return;
       remaining = Math.max(0, remaining - 1);
       updateRing();
     }, 1000);
@@ -75,7 +92,9 @@
     async function beat() {
       if (stopped) return;
       try {
-        const d = (await CP.api.afkHeartbeat()).data;
+        const d = (await CP.api.afkHeartbeat(sid)).data;
+        if (d.locked) { setLocked(true); return; } // another tab is earning
+        setLocked(false);
         perInterval = d.perInterval; interval = d.intervalSeconds;
         balance = d.coins;
         if (d.earned > 0) { sessionEarned += d.earned; flash(); CP.app.setCoins(balance); CP.ui.toast(`+${d.earned} coin${d.earned === 1 ? '' : 's'} 🪙`, 'ok', 1500); }

@@ -16,6 +16,10 @@ router.use(auth.authRequired);
 // client. Holds userId -> last-credited timestamp (resets on restart).
 const afkState = new Map();
 const AFK_MAX_INTERVALS = 40; // most a single heartbeat can credit at once
+// Single-session lock: userId -> { sid, lastSeen }. Only one AFK page per user
+// may earn at a time; a tab is "closed" once it stops sending heartbeats.
+const afkSessions = new Map();
+const AFK_SESSION_STALE_MS = 15000;
 
 // ---- Server access middleware --------------------------------------------
 
@@ -143,27 +147,38 @@ router.post('/afk/heartbeat', activeRequired, (req, res) => {
   const cfg = afkConfig();
   if (!cfg.enabled) return res.status(403).json({ error: 'AFK earning is disabled.' });
 
-  const intervalMs = cfg.intervalSeconds * 1000;
+  const uid = req.user.id;
+  const sid = String((req.body && req.body.sid) || '');
   const now = Date.now();
-  const last = afkState.get(req.user.id);
+  const intervalMs = cfg.intervalSeconds * 1000;
+  const base = { intervalSeconds: cfg.intervalSeconds, perInterval: cfg.coins, coins: req.user.coins || 0 };
 
-  // First beat just starts the clock — no instant payout.
-  if (last == null) {
-    afkState.set(req.user.id, now);
-    return res.json({ data: { coins: req.user.coins || 0, earned: 0, intervalSeconds: cfg.intervalSeconds, perInterval: cfg.coins, nextInSeconds: cfg.intervalSeconds } });
+  // ---- Single-session lock (anti multi-tab) ----
+  const sess = afkSessions.get(uid);
+  if (sess && sess.sid !== sid && now - sess.lastSeen < AFK_SESSION_STALE_MS) {
+    return res.json({ data: { ...base, locked: true } });
+  }
+  const isNewSession = !sess || sess.sid !== sid;
+  afkSessions.set(uid, { sid, lastSeen: now });
+
+  // New/claiming session (or very first beat): (re)start the clock from NOW so
+  // no coins are earned for time when no AFK page was actually open.
+  if (isNewSession || afkState.get(uid) == null) {
+    afkState.set(uid, now);
+    return res.json({ data: { ...base, earned: 0, nextInSeconds: cfg.intervalSeconds } });
   }
 
+  const last = afkState.get(uid);
   let intervals = Math.floor((now - last) / intervalMs);
   if (intervals <= 0) {
-    const nextInSeconds = Math.ceil((intervalMs - (now - last)) / 1000);
-    return res.json({ data: { coins: req.user.coins || 0, earned: 0, intervalSeconds: cfg.intervalSeconds, perInterval: cfg.coins, nextInSeconds } });
+    return res.json({ data: { ...base, earned: 0, nextInSeconds: Math.ceil((intervalMs - (now - last)) / 1000) } });
   }
   if (intervals > AFK_MAX_INTERVALS) intervals = AFK_MAX_INTERVALS;
 
-  afkState.set(req.user.id, last + intervals * intervalMs);
+  afkState.set(uid, last + intervals * intervalMs);
   const earned = intervals * cfg.coins;
-  const updated = db.update('users', req.user.id, { coins: (req.user.coins || 0) + earned });
-  res.json({ data: { coins: updated.coins, earned, intervalSeconds: cfg.intervalSeconds, perInterval: cfg.coins, nextInSeconds: cfg.intervalSeconds } });
+  const updated = db.update('users', uid, { coins: (req.user.coins || 0) + earned });
+  res.json({ data: { ...base, coins: updated.coins, earned, nextInSeconds: cfg.intervalSeconds } });
 });
 
 router.get('/servers/:id', loadServer, (req, res) => {
