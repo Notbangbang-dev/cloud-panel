@@ -13,12 +13,14 @@ const clientRoutes = require('./routes/client');
 const adminRoutes = require('./routes/admin');
 const consoleWs = require('./ws/console');
 const sftp = require('./sftp/sftpServer');
+const { securityHeaders } = require('./middleware');
 
 db.load();
 
 const app = express();
 app.disable('x-powered-by');
 if (config.trustProxy) app.set('trust proxy', true); // behind a domain / proxy / Cloudflare Tunnel
+app.use(securityHeaders);
 app.use(express.json({ limit: '8mb' }));
 app.use(express.urlencoded({ extended: true }));
 

@@ -370,7 +370,8 @@
     catch (err) { CP.clear(root); return root.appendChild(CP.empty('alert', err.message)); }
     CP.clear(root);
 
-    const startupTa = h('textarea', { style: { minHeight: '70px' } }, cfg.startup || '');
+    const isAdmin = !!CP.app.user.admin;
+    const startupTa = h('textarea', { style: { minHeight: '70px' }, ...(isAdmin ? {} : { readonly: true, title: 'Only administrators can change the startup command' }) }, cfg.startup || '');
     const varInputs = {};
     const varFields = (cfg.variables || []).map((v) => {
       const input = h('input', { value: (cfg.environment && cfg.environment[v.env]) ?? v.default ?? '' });
@@ -382,8 +383,10 @@
     const save = h('button', { class: 'btn primary', html: `${icon('save', 15)} Save changes`, onclick: async () => {
       const environment = {};
       Object.entries(varInputs).forEach(([k, el]) => (environment[k] = el.value));
+      const payload = { environment };
+      if (isAdmin) payload.startup = startupTa.value; // server also enforces this
       try {
-        await CP.api.put(`/servers/${S.server.id}/startup`, { startup: startupTa.value, environment });
+        await CP.api.put(`/servers/${S.server.id}/startup`, payload);
         CP.ui.toast('Startup configuration saved', 'ok');
       } catch (err) { CP.ui.toast(err.message, 'err'); }
     } });
@@ -392,7 +395,7 @@
       h('div', { class: 'card' },
         h('h3', {}, 'Startup Command'),
         h('p', { class: 'muted', style: { fontSize: '13px', margin: '4px 0 14px' } },
-          'Tokens like {{SERVER_MEMORY}}, {{SERVER_PORT}} and your variables below are substituted at boot.'),
+          'Tokens like {{SERVER_MEMORY}}, {{SERVER_PORT}} and your variables below are substituted at boot.' + (isAdmin ? '' : ' Only administrators can change the raw command.')),
         startupTa,
         cfg.docker ? h('div', { class: 'chip', style: { marginTop: '12px' }, html: `${icon('box', 13)} ${CP.esc(cfg.docker)}` }) : null
       ),

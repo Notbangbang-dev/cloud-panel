@@ -161,7 +161,14 @@ router.get('/servers/:id/startup', loadServer, (req, res) => {
 router.put('/servers/:id/startup', loadServer, (req, res) => {
   const { startup, environment } = req.body || {};
   const patch = {};
-  if (typeof startup === 'string') patch.startup = startup;
+  // SECURITY: servers run as host processes, so the raw startup command is
+  // effectively arbitrary code execution on the host. Only administrators may
+  // change it; regular owners can only adjust their egg's variables.
+  if (typeof startup === 'string') {
+    if (!req.user.admin)
+      return res.status(403).json({ error: 'Only an administrator can change the startup command. You can edit variables below.' });
+    patch.startup = startup;
+  }
   if (environment && typeof environment === 'object')
     patch.environment = { ...req.server.environment, ...environment };
   const updated = db.update('servers', req.server.id, patch);

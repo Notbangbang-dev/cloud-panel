@@ -4,10 +4,14 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
 const config = require('../config');
+const { rateLimit } = require('../middleware');
 
 const router = express.Router();
 
-router.post('/login', (req, res) => {
+// Brute-force protection: max 10 login attempts per IP per minute.
+const loginLimiter = rateLimit({ windowMs: 60000, max: 10, message: 'Too many login attempts — wait a minute and try again.' });
+
+router.post('/login', loginLimiter, (req, res) => {
   const { login, password } = req.body || {};
   if (!login || !password)
     return res.status(400).json({ error: 'Username/email and password are required' });

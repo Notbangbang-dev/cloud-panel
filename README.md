@@ -3,6 +3,8 @@
 > A Pterodactyl-style game server management panel — with **PufferPanel's default ports**.
 > Deploy. Scale. Dominate.
 
+**Repository:** https://github.com/Notbangbang-dev/cloud-panel
+
 Cloud Panel is a self-contained game server control panel. It boots in seconds,
 manages **real** server processes, streams a **live console** over WebSockets,
 ships a **per-server SFTP** server, and includes a slick admin console for users,
@@ -63,7 +65,7 @@ Admins can also create users in the web UI under **Admin → Users → Create Us
 On a fresh **Ubuntu/Debian** server, upload or clone the project, then:
 
 ```bash
-git clone <your-repo-url> cloud-panel   # or scp/rsync the folder up
+git clone https://github.com/Notbangbang-dev/cloud-panel.git   # or scp/rsync the folder up
 cd cloud-panel
 sudo bash scripts/install.sh
 ```

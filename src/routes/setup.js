@@ -5,8 +5,12 @@ const db = require('../db');
 const auth = require('../auth');
 const config = require('../config');
 const users = require('../services/users');
+const { rateLimit } = require('../middleware');
 
 const router = express.Router();
+
+// Prevent abuse of the one-time setup endpoint.
+const setupLimiter = rateLimit({ windowMs: 60000, max: 6, message: 'Too many setup attempts — wait a minute and try again.' });
 
 /** Whether the panel still needs its first administrator. */
 router.get('/status', (req, res) => {
@@ -18,7 +22,7 @@ router.get('/status', (req, res) => {
 });
 
 /** Create the first administrator. Only works while NO users exist. */
-router.post('/', (req, res) => {
+router.post('/', setupLimiter, (req, res) => {
   if (!db.needsSetup())
     return res.status(403).json({ error: 'Setup has already been completed.' });
 

@@ -42,6 +42,32 @@ function int(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+const DATA_DIR = process.env.CP_DATA_DIR || path.join(ROOT, 'data');
+
+/**
+ * JWT secret resolution — NO hard-coded fallback.
+ * Uses CP_JWT_SECRET if provided; otherwise generates a strong random secret
+ * once and persists it to data/.jwt-secret so tokens survive restarts.
+ */
+function resolveJwtSecret() {
+  if (process.env.CP_JWT_SECRET) return process.env.CP_JWT_SECRET;
+  const crypto = require('crypto');
+  const file = path.join(DATA_DIR, '.jwt-secret');
+  try {
+    if (fs.existsSync(file)) {
+      const existing = fs.readFileSync(file, 'utf8').trim();
+      if (existing.length >= 32) return existing;
+    }
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const secret = crypto.randomBytes(48).toString('hex');
+    fs.writeFileSync(file, secret, { mode: 0o600 });
+    console.log('[config] generated a persistent JWT secret -> data/.jwt-secret');
+    return secret;
+  } catch {
+    return crypto.randomBytes(48).toString('hex'); // ephemeral last resort
+  }
+}
+
 const config = {
   root: ROOT,
 
@@ -61,23 +87,22 @@ const config = {
   trustProxy: process.env.CP_TRUST_PROXY !== '0',
 
   // ---- Security -----------------------------------------------------------
-  jwtSecret:
-    process.env.CP_JWT_SECRET ||
-    'cloud-panel-dev-secret-change-me-in-production-please',
+  // No hard-coded secret: CP_JWT_SECRET if set, else auto-generated & persisted.
+  jwtSecret: resolveJwtSecret(),
   jwtExpiresIn: process.env.CP_JWT_TTL || '7d',
   bcryptRounds: int(process.env.CP_BCRYPT_ROUNDS, 10),
 
   // ---- Storage ------------------------------------------------------------
-  dataDir: process.env.CP_DATA_DIR || path.join(ROOT, 'data'),
+  dataDir: DATA_DIR,
   // Real database (SQLite). Falls back to the JSON file if better-sqlite3
   // cannot be loaded on this platform.
-  sqliteFile: process.env.CP_SQLITE_FILE || path.join(ROOT, 'data', 'cloud-panel.db'),
-  dbFile: process.env.CP_DB_FILE || path.join(ROOT, 'data', 'cloud-panel.json'),
+  sqliteFile: process.env.CP_SQLITE_FILE || path.join(DATA_DIR, 'cloud-panel.db'),
+  dbFile: process.env.CP_DB_FILE || path.join(DATA_DIR, 'cloud-panel.json'),
   forceJsonStore: process.env.CP_FORCE_JSON === '1',
   // Per-server file storage lives here: <volumesDir>/<serverId>
-  volumesDir: process.env.CP_VOLUMES_DIR || path.join(ROOT, 'data', 'volumes'),
+  volumesDir: process.env.CP_VOLUMES_DIR || path.join(DATA_DIR, 'volumes'),
   hostKeyFile:
-    process.env.CP_SFTP_HOSTKEY || path.join(ROOT, 'data', 'sftp_host.key'),
+    process.env.CP_SFTP_HOSTKEY || path.join(DATA_DIR, 'sftp_host.key'),
 
   // ---- Branding -----------------------------------------------------------
   brand: {
