@@ -18,6 +18,7 @@ db.load();
 
 const app = express();
 app.disable('x-powered-by');
+if (config.trustProxy) app.set('trust proxy', true); // behind a domain / proxy / Cloudflare Tunnel
 app.use(express.json({ limit: '8mb' }));
 app.use(express.urlencoded({ extended: true }));
 

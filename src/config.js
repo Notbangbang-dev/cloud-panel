@@ -50,8 +50,15 @@ const config = {
   webPort: int(process.env.CP_WEB_PORT, 8080), // PufferPanel web port
   sftpPort: int(process.env.CP_SFTP_PORT, 5657), // PufferPanel SFTP port
 
-  // Public address advertised to clients for allocations / SFTP hints.
+  // The domain or IP people use to reach the panel. Shown for SFTP/allocation
+  // hints, and used as the canonical address. Examples:
+  //   CP_PUBLIC_HOST=panel.yourdomain.com   or   CP_PUBLIC_HOST=203.0.113.10
   publicHost: process.env.CP_PUBLIC_HOST || '127.0.0.1',
+
+  // Trust X-Forwarded-* headers (so the panel works correctly behind a reverse
+  // proxy / Cloudflare Tunnel and reports https + the real client IP). Set
+  // CP_TRUST_PROXY=0 to disable.
+  trustProxy: process.env.CP_TRUST_PROXY !== '0',
 
   // ---- Security -----------------------------------------------------------
   jwtSecret:

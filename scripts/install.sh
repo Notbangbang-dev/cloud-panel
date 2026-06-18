@@ -118,14 +118,22 @@ ok "Dependencies installed."
 # ---- 6. Environment ------------------------------------------------------
 PUBLIC_IP="$(curl -fsS https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')"
 PUBLIC_IP="${PUBLIC_IP:-127.0.0.1}"
+# Domain or IP people will use to reach the panel (env override or prompt).
+PUBLIC_HOST="${CP_PUBLIC_HOST:-}"
+if [ -z "$PUBLIC_HOST" ] && [ -t 0 ]; then
+  read -rp "  Domain or IP to reach the panel [${PUBLIC_IP}]: " _h
+  PUBLIC_HOST="${_h:-$PUBLIC_IP}"
+fi
+PUBLIC_HOST="${PUBLIC_HOST:-$PUBLIC_IP}"
 if [ ! -f "$APP_DIR/.env" ]; then
-  say "Generating .env (random JWT secret, public host ${PUBLIC_IP})…"
+  say "Generating .env (random JWT secret, public host ${PUBLIC_HOST})…"
   SECRET="$(openssl rand -hex 32)"
   cat > "$APP_DIR/.env" <<EOF
 CP_WEB_PORT=${WEB_PORT}
 CP_SFTP_PORT=${SFTP_PORT}
 CP_HOST=0.0.0.0
-CP_PUBLIC_HOST=${PUBLIC_IP}
+CP_PUBLIC_HOST=${PUBLIC_HOST}
+CP_TRUST_PROXY=1
 CP_JWT_SECRET=${SECRET}
 CP_JWT_TTL=7d
 CP_ALLOC_START=${ALLOC_START}
@@ -208,8 +216,8 @@ sleep 1
 echo
 ok "Cloud Panel is installed and running!"
 echo
-echo -e "  ${c_grn}Web panel${c_off}   : http://${PUBLIC_IP}:${WEB_PORT}"
-echo -e "  ${c_grn}SFTP${c_off}        : ${PUBLIC_IP}:${SFTP_PORT}  (user: <name>.<serverId>)"
+echo -e "  ${c_grn}Web panel${c_off}   : http://${PUBLIC_HOST}:${WEB_PORT}"
+echo -e "  ${c_grn}SFTP${c_off}        : ${PUBLIC_HOST}:${SFTP_PORT}  (user: <name>.<serverId>)"
 echo
 if [ "$ADMIN_CREATED" = "1" ]; then
   echo -e "  ${c_ylw}Your administrator login:${c_off}"
