@@ -419,3 +419,42 @@ table.tbl tbody tr:hover { background: rgba(255,255,255,0.03); }
   .topbar { padding: 14px 16px; }
   .search { display: none; }
 }
+
+/* ============================================================
+   Economy: coins, shop, switches, auth extras
+   ============================================================ */
+.coins-chip { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: rgba(251, 191, 36, 0.07); color: var(--text); font-size: 13px; cursor: pointer; margin-bottom: 10px; transition: border 0.15s, background 0.15s; }
+.coins-chip:hover { border-color: var(--border-strong); background: rgba(251, 191, 36, 0.12); }
+.coins-chip svg { color: #fbbf24; }
+.coins-chip b { font-family: var(--mono); }
+.coins-chip span { color: var(--muted); }
+.coins-big { display: inline-flex; align-items: center; gap: 9px; padding: 10px 18px; border-radius: 14px; border: 1px solid var(--border-strong); background: rgba(251, 191, 36, 0.08); font-size: 18px; }
+.coins-big svg { color: #fbbf24; }
+.coins-big b { font-family: var(--mono); }
+
+.res-tile .v small { font-size: 13px; color: var(--muted); }
+
+.shop-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.shop-card { text-align: center; display: flex; flex-direction: column; align-items: center; }
+.shop-ic { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; border: 1px solid var(--border-strong); margin-bottom: 12px; }
+.shop-card h3 { margin: 0 0 2px; }
+.shop-amount { font-size: 22px; font-weight: 850; font-family: var(--mono); background: var(--accent-grad); -webkit-background-clip: text; background-clip: text; color: transparent; margin-bottom: 2px; }
+.shop-cost { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-weight: 700; color: #fbbf24; margin-bottom: 12px; }
+.shop-cost svg { color: #fbbf24; }
+.shop-buy { display: flex; gap: 8px; align-items: flex-end; width: 100%; }
+.shop-qty { display: flex; flex-direction: column; gap: 4px; font-size: 11px; }
+.shop-qty input { width: 70px; }
+.shop-buy .btn { flex: 1; }
+
+.auth-error { color: var(--red); font-size: 13px; min-height: 18px; margin-bottom: 10px; }
+.auth-link { color: var(--cyan); cursor: pointer; font-weight: 600; }
+.auth-link:hover { text-decoration: underline; }
+.pending-icon { width: 72px; height: 72px; border-radius: 20px; margin: 0 auto; display: grid; place-items: center; background: rgba(34, 211, 238, 0.12); color: var(--cyan); }
+.pending-icon.bad { background: rgba(248, 113, 113, 0.14); color: var(--red); }
+
+.switch-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.switch-row:last-child { border-bottom: none; }
+input.switch { appearance: none; -webkit-appearance: none; width: 44px; height: 24px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); position: relative; cursor: pointer; transition: background 0.2s; flex: 0 0 44px; border: none; padding: 0; }
+input.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left 0.2s; }
+input.switch:checked { background: var(--indigo); }
+input.switch:checked::after { left: 23px; }

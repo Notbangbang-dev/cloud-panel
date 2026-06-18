@@ -15,13 +15,14 @@ function validate({ username, email, password }) {
   if (String(password).length < 8) throw new Error('password must be at least 8 characters');
 }
 
-function createUser({ username, email, password, admin = false, firstName = '', lastName = '' }) {
+function createUser({ username, email, password, admin = false, firstName = '', lastName = '', status, coins, resources }) {
   validate({ username, email, password });
   if (db.find('users', (u) => u.username.toLowerCase() === username.toLowerCase()))
     throw new Error(`username "${username}" is already taken`);
   if (db.find('users', (u) => u.email.toLowerCase() === email.toLowerCase()))
     throw new Error(`email "${email}" is already in use`);
 
+  const d = db.settings().defaults;
   return db.insert('users', {
     id: db.uid('user'),
     uuid: db.uuid(),
@@ -32,6 +33,10 @@ function createUser({ username, email, password, admin = false, firstName = '', 
     password: auth.hashPassword(password),
     admin: !!admin,
     twoFactor: false,
+    // ---- economy / access ----
+    status: status || 'active',
+    coins: coins != null ? coins : d.coins,
+    resources: resources || { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers },
     createdAt: new Date().toISOString(),
   });
 }

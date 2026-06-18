@@ -7,6 +7,7 @@ const auth = require('../auth');
 const config = require('../config');
 const pm = require('../services/processManager');
 const users = require('../services/users');
+const settings = require('../services/settings');
 const { serializeServer, serializeNode } = require('./helpers');
 
 const router = express.Router();
@@ -57,14 +58,52 @@ router.post('/users', (req, res) => {
 router.patch('/users/:id', (req, res) => {
   const user = db.get('users', req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const { email, firstName, lastName, admin, password } = req.body || {};
+  const { email, firstName, lastName, admin, password, status, coins, resources } = req.body || {};
   const patch = {};
   if (email) patch.email = email;
   if (firstName !== undefined) patch.firstName = firstName;
   if (lastName !== undefined) patch.lastName = lastName;
   if (admin !== undefined) patch.admin = !!admin;
   if (password) patch.password = auth.hashPassword(password);
+  if (status && ['active', 'pending', 'declined'].includes(status)) patch.status = status;
+  if (coins !== undefined) patch.coins = Math.max(0, Math.floor(Number(coins) || 0));
+  if (resources && typeof resources === 'object') {
+    patch.resources = {
+      memory: Math.max(0, Math.floor(Number(resources.memory ?? user.resources?.memory) || 0)),
+      cpu: Math.max(0, Math.floor(Number(resources.cpu ?? user.resources?.cpu) || 0)),
+      disk: Math.max(0, Math.floor(Number(resources.disk ?? user.resources?.disk) || 0)),
+      servers: Math.max(0, Math.floor(Number(resources.servers ?? user.resources?.servers) || 0)),
+    };
+  }
   res.json({ data: auth.publicUser(db.update('users', user.id, patch)) });
+});
+
+/** Approve / decline a pending user. */
+router.post('/users/:id/approve', (req, res) => {
+  const user = db.get('users', req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const updated = db.update('users', user.id, { status: 'active', approvedAt: new Date().toISOString() });
+  db.log({ type: 'admin', userId: req.user.id, message: `Approved ${user.username}` });
+  res.json({ data: auth.publicUser(updated) });
+});
+
+router.post('/users/:id/decline', (req, res) => {
+  const user = db.get('users', req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const updated = db.update('users', user.id, { status: 'declined' });
+  db.log({ type: 'admin', userId: req.user.id, message: `Declined ${user.username}` });
+  res.json({ data: auth.publicUser(updated) });
+});
+
+/** Grant or remove coins (positive or negative amount). */
+router.post('/users/:id/coins', (req, res) => {
+  const user = db.get('users', req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const amount = Math.floor(Number((req.body || {}).amount) || 0);
+  const coins = Math.max(0, (user.coins || 0) + amount);
+  const updated = db.update('users', user.id, { coins });
+  db.log({ type: 'admin', userId: req.user.id, message: `${amount >= 0 ? 'Gave' : 'Removed'} ${Math.abs(amount)} coins ${amount >= 0 ? 'to' : 'from'} ${user.username}` });
+  res.json({ data: auth.publicUser(updated) });
 });
 
 router.delete('/users/:id', (req, res) => {
@@ -77,6 +116,18 @@ router.delete('/users/:id', (req, res) => {
   db.remove('users', user.id);
   db.log({ type: 'admin', userId: req.user.id, message: `Deleted user ${user.username}` });
   res.json({ ok: true });
+});
+
+// ---- Settings (economy / registration / shop) ----------------------------
+
+router.get('/settings', (req, res) => {
+  res.json({ data: settings.get() });
+});
+
+router.put('/settings', (req, res) => {
+  const updated = settings.update(req.body || {});
+  db.log({ type: 'admin', userId: req.user.id, message: 'Updated panel settings' });
+  res.json({ data: updated });
 });
 
 // ---- Locations ------------------------------------------------------------

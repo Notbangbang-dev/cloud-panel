@@ -5,6 +5,8 @@ const db = require('../db');
 const auth = require('../auth');
 const pm = require('../services/processManager');
 const files = require('../services/files');
+const settings = require('../services/settings');
+const serversSvc = require('../services/servers');
 const { canAccessServer, serializeServer, serializeAllocation } = require('./helpers');
 
 const router = express.Router();
@@ -23,6 +25,12 @@ function loadServer(req, res, next) {
   next();
 }
 
+/** Require an approved (active) account — admins always pass. */
+function activeRequired(req, res, next) {
+  if (req.user.admin || req.user.status === 'active') return next();
+  return res.status(403).json({ error: 'Your account is awaiting approval before you can do this.' });
+}
+
 // ---- Server listing -------------------------------------------------------
 
 router.get('/servers', (req, res) => {
@@ -31,6 +39,87 @@ router.get('/servers', (req, res) => {
     .filter((s) => canAccessServer(req.user, s))
     .map((s) => serializeServer(s));
   res.json({ data: list });
+});
+
+// ---- Self-service: egg catalog, quotas, creation, shop -------------------
+
+router.get('/eggs', (req, res) => {
+  const data = db.all('eggs').map((e) => ({
+    id: e.id, name: e.name, category: e.category, description: e.description,
+    installer: e.installer || 'none',
+    variables: (e.variables || []).map((v) => ({ name: v.name, env: v.env, default: v.default })),
+  }));
+  res.json({ data });
+});
+
+router.get('/account/resources', (req, res) => {
+  const quota = serversSvc.quotaFor(req.user);
+  const used = serversSvc.usedResources(req.user.id);
+  res.json({
+    data: {
+      status: req.user.status,
+      coins: req.user.coins || 0,
+      quota,
+      used,
+      available: {
+        memory: quota.memory - used.memory,
+        cpu: quota.cpu - used.cpu,
+        disk: quota.disk - used.disk,
+        servers: quota.servers - used.servers,
+      },
+      economyEnabled: settings.economyEnabled(),
+    },
+  });
+});
+
+router.post('/servers', activeRequired, (req, res) => {
+  const b = req.body || {};
+  const lim = db.settings().limits;
+  const memory = Math.floor(Number(b.memory) || 0);
+  const cpu = Math.floor(Number(b.cpu) || 0);
+  const disk = Math.floor(Number(b.disk) || 0);
+  if (!b.eggId) return res.status(400).json({ error: 'Choose a server type (egg).' });
+  if (memory < lim.minMemory) return res.status(400).json({ error: `Memory must be at least ${lim.minMemory} MB` });
+  if (cpu < lim.minCpu) return res.status(400).json({ error: `CPU must be at least ${lim.minCpu}%` });
+  if (disk < lim.minDisk) return res.status(400).json({ error: `Disk must be at least ${lim.minDisk} MB` });
+
+  const avail = serversSvc.availableResources(req.user);
+  if (avail.servers < 1) return res.status(403).json({ error: 'No server slots left — buy one in the shop or delete a server.' });
+  if (memory > avail.memory) return res.status(403).json({ error: `Not enough RAM: ${avail.memory} MB available.` });
+  if (cpu > avail.cpu) return res.status(403).json({ error: `Not enough CPU: ${avail.cpu}% available.` });
+  if (disk > avail.disk) return res.status(403).json({ error: `Not enough disk: ${avail.disk} MB available.` });
+
+  let server;
+  try {
+    server = serversSvc.createServer({ name: b.name, ownerId: req.user.id, eggId: b.eggId, memory, cpu, disk, environment: b.environment });
+  } catch (err) {
+    return res.status(409).json({ error: err.message });
+  }
+  db.log({ type: 'server', userId: req.user.id, serverId: server.id, message: `${req.user.username} created server '${server.name}'` });
+  res.status(201).json({ data: serializeServer(server, { detail: true }) });
+});
+
+router.get('/shop', (req, res) => {
+  if (!settings.economyEnabled()) return res.status(403).json({ error: 'The shop is disabled.' });
+  const s = db.settings();
+  res.json({ data: { coins: req.user.coins || 0, shop: s.shop, resources: serversSvc.quotaFor(req.user) } });
+});
+
+router.post('/shop/buy', activeRequired, (req, res) => {
+  if (!settings.economyEnabled()) return res.status(403).json({ error: 'The shop is disabled.' });
+  const { resource, quantity } = req.body || {};
+  const s = db.settings();
+  const item = s.shop[resource];
+  if (!item) return res.status(400).json({ error: 'Unknown shop item.' });
+  const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+  const cost = item.price * qty;
+  const coins = req.user.coins || 0;
+  if (cost > coins) return res.status(402).json({ error: `Not enough coins — this costs ${cost}, you have ${coins}.` });
+  const resources = { ...req.user.resources };
+  resources[resource] = (resources[resource] || 0) + item.amount * qty;
+  const updated = db.update('users', req.user.id, { coins: coins - cost, resources });
+  db.log({ type: 'shop', userId: req.user.id, message: `${req.user.username} bought ${item.amount * qty} ${resource} for ${cost} coins` });
+  res.json({ data: { coins: updated.coins, resources: updated.resources, bought: { resource, amount: item.amount * qty, cost } } });
 });
 
 router.get('/servers/:id', loadServer, (req, res) => {

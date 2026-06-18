@@ -13,6 +13,7 @@
   const app = {
     user: null,
     needsSetup: false,
+    economyEnabled: false,
     ports: { web: 8080, sftp: 5657 },
     brand: { name: 'Cloud Panel', tagline: 'Deploy. Scale. Dominate.' },
     _cleanups: [],
@@ -49,8 +50,11 @@
       } catch {}
 
       if (CP.api.token) {
-        try { this.user = (await CP.api.me()).user; }
-        catch { CP.api.token = null; }
+        try {
+          const me = await CP.api.me();
+          this.user = me.user;
+          this.economyEnabled = !!me.economyEnabled;
+        } catch { CP.api.token = null; }
       }
 
       window.addEventListener('popstate', () => this.render());
@@ -68,6 +72,7 @@
       if (head === 'server') return { route: 'server', params: { id: rest[0], tab: rest[1] } };
       if (head === 'admin') return { route: 'admin', params: { tab: rest[0] } };
       if (head === 'account') return { route: 'account', params: {} };
+      if (head === 'shop') return { route: 'shop', params: {} };
       if (head === 'login') return { route: 'login', params: {} };
       return { route: 'dashboard', params: {} };
     },
@@ -85,6 +90,13 @@
         return;
       }
       if (r.route === 'login') { this.go('/'); return; }
+
+      // Awaiting-approval / declined users get a dedicated screen (no panel).
+      if (!this.user.admin && (this.user.status === 'pending' || this.user.status === 'declined') && CP.pages.pending) {
+        this.shell = null;
+        CP.pages.pending(appRoot);
+        return;
+      }
 
       if (!this.shell) this.buildShell(appRoot);
       this.setActiveNav(r.route);
@@ -110,10 +122,17 @@
       const u = this.user;
       const initials = ((u.firstName || u.username || '?')[0] + (u.lastName || '')[0] || (u.username || '?')[0]).toUpperCase();
 
-      const navItems = NAV.map((n) =>
+      const navDefs = [{ route: 'dashboard', label: 'Dashboard', icon: 'dashboard', path: '/' }];
+      if (this.economyEnabled) navDefs.push({ route: 'shop', label: 'Shop', icon: 'cart', path: '/shop' });
+      navDefs.push({ route: 'account', label: 'Account', icon: 'settings', path: '/account' });
+      const navItems = navDefs.map((n) =>
         h('div', { class: 'nav-item', dataset: { route: n.route }, html: `${icon(n.icon, 18)}<span>${n.label}</span>`, onclick: () => this.go(n.path) }));
       if (u.admin)
         navItems.push(h('div', { class: 'nav-item', dataset: { route: 'admin' }, html: `${icon(ADMIN_NAV.icon, 18)}<span>${ADMIN_NAV.label}</span>`, onclick: () => this.go(ADMIN_NAV.path) }));
+
+      const coinsEl = h('div', { class: 'coins-chip', onclick: () => this.go('/shop') });
+      const renderCoins = () => { coinsEl.innerHTML = `${icon('coin', 16)} <b>${(this.user.coins || 0).toLocaleString()}</b> <span>coins</span>`; };
+      renderCoins();
 
       const sidebar = h('aside', { class: 'sidebar' },
         h('div', { class: 'brand' },
@@ -122,6 +141,7 @@
         h('div', { class: 'nav-label' }, 'Navigation'),
         ...navItems,
         h('div', { class: 'spacer' }),
+        this.economyEnabled ? coinsEl : null,
         h('div', { class: 'side-user', onclick: () => this.go('/account') },
           h('div', { class: 'avatar' }, initials),
           h('div', { class: 'meta' }, h('b', {}, u.username), h('span', {}, u.email)),
@@ -152,7 +172,13 @@
       const shellEl = h('div', { class: 'shell' }, sidebar, main);
 
       CP.clear(appRoot).appendChild(shellEl);
-      this.shell = { sidebar, content, crumbs, navItems: sidebar.querySelectorAll('.nav-item') };
+      this.shell = { sidebar, content, crumbs, navItems: sidebar.querySelectorAll('.nav-item'), renderCoins };
+    },
+
+    /** Update the cached coin balance + sidebar chip (called by shop/dashboard). */
+    setCoins(n) {
+      if (this.user) this.user.coins = n;
+      if (this.shell && this.shell.renderCoins) this.shell.renderCoins();
     },
 
     setActiveNav(route) {

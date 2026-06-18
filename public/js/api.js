@@ -47,6 +47,24 @@
     setupStatus() { return this.get('/setup/status'); },
     setup(payload) { return this.post('/setup', payload); },
 
+    /* registration / config */
+    authConfig() { return this.get('/auth/config'); },
+    register(payload) { return this.post('/auth/register', payload); },
+
+    /* economy & self-service */
+    accountResources() { return this.get('/account/resources'); },
+    eggs() { return this.get('/eggs'); },
+    createServer(payload) { return this.post('/servers', payload); },
+    shop() { return this.get('/shop'); },
+    shopBuy(resource, quantity) { return this.post('/shop/buy', { resource, quantity }); },
+
+    /* admin economy/access */
+    adminSettings() { return this.get('/admin/settings'); },
+    adminUpdateSettings(patch) { return this.put('/admin/settings', patch); },
+    adminApprove(id) { return this.post(`/admin/users/${id}/approve`); },
+    adminDecline(id) { return this.post(`/admin/users/${id}/decline`); },
+    adminCoins(id, amount) { return this.post(`/admin/users/${id}/coins`, { amount }); },
+
     /* console websocket */
     consoleSocket(serverId, onMessage) {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';

@@ -13,6 +13,7 @@
     { id: 'locations', label: 'Locations', icon: 'pin' },
     { id: 'allocations', label: 'Allocations', icon: 'network' },
     { id: 'eggs', label: 'Eggs', icon: 'box' },
+    { id: 'settings', label: 'Settings', icon: 'sliders' },
   ];
 
   CP.pages.admin = async function (root, ctx) {
@@ -37,7 +38,7 @@
 
     function render() {
       CP.clear(content);
-      ({ overview, servers, users, nodes, locations, allocations, eggs }[active])(content);
+      ({ overview, servers, users, nodes, locations, allocations, eggs, settings }[active])(content);
     }
     render();
   };
@@ -209,13 +210,46 @@
   }
 
   /* ---------------- Users ---------------- */
+  function statusBadge(u) {
+    if (u.status === 'pending') return h('span', { class: 'badge', style: { background: 'rgba(251,191,36,.16)', color: '#fbbf24' } }, 'Pending');
+    if (u.status === 'declined') return h('span', { class: 'badge', style: { background: 'rgba(248,113,113,.16)', color: '#f87171' } }, 'Declined');
+    return h('span', { class: 'badge green' }, 'Active');
+  }
+  async function giveCoins(u, done) {
+    const v = await CP.ui.prompt({ title: `Coins for ${u.username}`, label: 'Amount to add (use a negative number to remove)', value: '100' });
+    if (v === null) return;
+    try { await CP.api.adminCoins(u.id, Math.floor(Number(v) || 0)); CP.ui.toast('Coins updated', 'ok'); done(); }
+    catch (e) { CP.ui.toast(e.message, 'err'); }
+  }
+
   async function users(root) {
+    const reload = () => users(CP.clear(root));
     root.appendChild(h('div', { class: 'fm-bar' }, h('div', { style: { flex: 1 } }),
-      h('button', { class: 'btn primary', html: `${icon('plus', 14)} Create User`, onclick: () => createUser(() => users(CP.clear(root))) })));
+      h('button', { class: 'btn primary', html: `${icon('plus', 14)} Create User`, onclick: () => createUser(reload) })));
+    const pendingHolder = h('div', {});
     const wrap = tableCard(CP.spinner());
-    root.appendChild(wrap);
+    root.append(pendingHolder, wrap);
     try {
       const list = (await CP.api.get('/admin/users')).data;
+      const pending = list.filter((u) => u.status === 'pending');
+
+      if (pending.length) {
+        const pb = h('tbody');
+        pending.forEach((u) => pb.appendChild(h('tr', {},
+          h('td', {}, h('b', {}, u.username)),
+          h('td', { class: 'muted' }, u.email),
+          h('td', { class: 'muted nowrap' }, fmt.rel(u.createdAt)),
+          h('td', {}, h('div', { class: 'row-actions' },
+            h('button', { class: 'btn sm green', html: `${icon('check', 14)} Approve`, onclick: async () => { try { await CP.api.adminApprove(u.id); CP.ui.toast(`Approved ${u.username}`, 'ok'); reload(); } catch (e) { CP.ui.toast(e.message, 'err'); } } }),
+            h('button', { class: 'btn sm red', html: `${icon('x', 14)} Decline`, onclick: async () => { try { await CP.api.adminDecline(u.id); CP.ui.toast(`Declined ${u.username}`, 'info'); reload(); } catch (e) { CP.ui.toast(e.message, 'err'); } } })))
+        )));
+        pendingHolder.append(
+          h('div', { class: 'section-title', style: { marginTop: 0 } }, `${icon('clock', 13)} Pending approval (${pending.length})`),
+          tableCard(h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'User'), h('th', {}, 'Email'), h('th', {}, 'Requested'), h('th', { class: 'right' }, 'Actions'))), pb)),
+          h('div', { class: 'section-title' }, 'All users')
+        );
+      }
+
       CP.clear(wrap);
       const tbody = h('tbody');
       list.forEach((u) => tbody.appendChild(h('tr', {},
@@ -223,14 +257,16 @@
           h('div', { class: 'avatar', style: { width: '30px', height: '30px', fontSize: '12px' } }, (u.username[0] || '?').toUpperCase()),
           h('b', {}, u.username))),
         h('td', { class: 'muted' }, u.email),
-        h('td', {}, u.admin ? h('span', { class: 'badge admin' }, 'Admin') : h('span', { class: 'badge soft' }, 'User')),
-        h('td', { class: 'muted nowrap' }, fmt.rel(u.createdAt)),
+        h('td', {}, u.admin ? h('span', { class: 'badge admin' }, 'Admin') : statusBadge(u)),
+        h('td', { class: 'mono' }, CP.app.economyEnabled ? (u.coins || 0).toLocaleString() : '—'),
+        h('td', { class: 'muted nowrap', style: { fontSize: '12px' } }, u.resources ? `${u.resources.memory}MB · ${u.resources.cpu}% · ${u.resources.servers} slot(s)` : '—'),
         h('td', {}, h('div', { class: 'row-actions' },
-          h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => editUser(u, () => users(CP.clear(root))) }),
-          h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delUser(u, () => users(CP.clear(root))) })))
+          CP.app.economyEnabled ? h('button', { class: 'btn sm ghost icon', title: 'Give coins', html: icon('coin', 14), onclick: () => giveCoins(u, reload) }) : null,
+          h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => editUser(u, reload) }),
+          h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delUser(u, reload) })))
       )));
       wrap.appendChild(h('table', { class: 'tbl' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'User'), h('th', {}, 'Email'), h('th', {}, 'Role'), h('th', {}, 'Created'), h('th', { class: 'right' }, 'Actions'))), tbody));
+        h('thead', {}, h('tr', {}, h('th', {}, 'User'), h('th', {}, 'Email'), h('th', {}, 'Status'), h('th', {}, 'Coins'), h('th', {}, 'Quota'), h('th', { class: 'right' }, 'Actions'))), tbody));
     } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
   }
   function userForm(u) {
@@ -259,18 +295,122 @@
         catch (err) { CP.ui.toast(err.message, 'err'); } } }, 'Create')] });
   }
   function editUser(u, done) {
-    const f = userForm(u);
-    const ref = CP.ui.modal({ title: `Edit ${u.username}`, body: f.body, footer: [
+    const r = u.resources || {};
+    const email = h('input', { value: u.email });
+    const first = h('input', { value: u.firstName || '' });
+    const last = h('input', { value: u.lastName || '' });
+    const password = h('input', { type: 'password', placeholder: 'Leave blank to keep' });
+    const admin = h('input', { type: 'checkbox' }); if (u.admin) admin.checked = true;
+    const status = h('select', {}, ...['active', 'pending', 'declined'].map((s) => h('option', { value: s, selected: u.status === s }, s)));
+    const coins = h('input', { type: 'number', value: u.coins || 0 });
+    const mem = h('input', { type: 'number', value: r.memory || 0 });
+    const cpu = h('input', { type: 'number', value: r.cpu || 0 });
+    const disk = h('input', { type: 'number', value: r.disk || 0 });
+    const slots = h('input', { type: 'number', value: r.servers || 0 });
+
+    const body = h('div', {},
+      h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 16px' } },
+        h('label', { class: 'field' }, h('span', {}, 'Email'), email),
+        h('label', { class: 'field' }, h('span', {}, 'Status'), status),
+        h('label', { class: 'field' }, h('span', {}, 'First name'), first),
+        h('label', { class: 'field' }, h('span', {}, 'Last name'), last),
+        h('label', { class: 'field' }, h('span', {}, 'New password'), password),
+        h('label', { class: 'field' }, h('span', {}, 'Coins'), coins)),
+      h('label', { style: { display: 'flex', alignItems: 'center', gap: '10px', margin: '2px 0 8px', cursor: 'pointer' } }, admin, h('span', { class: 'muted' }, 'Administrator (full access)')),
+      h('div', { class: 'section-title', style: { margin: '10px 0 6px' } }, 'Resource quota'),
+      h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 12px' } },
+        h('label', { class: 'field' }, h('span', {}, 'RAM (MB)'), mem),
+        h('label', { class: 'field' }, h('span', {}, 'CPU (%)'), cpu),
+        h('label', { class: 'field' }, h('span', {}, 'Disk (MB)'), disk),
+        h('label', { class: 'field' }, h('span', {}, 'Slots'), slots)));
+
+    const ref = CP.ui.modal({ title: `Edit ${u.username}`, size: 'lg', body, footer: [
       h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
       h('button', { class: 'btn primary', onclick: async () => {
-        const v = f.vals(); const patch = { email: v.email, firstName: v.firstName, lastName: v.lastName, admin: v.admin };
-        if (v.password) patch.password = v.password;
+        const patch = {
+          email: email.value, firstName: first.value, lastName: last.value, admin: admin.checked,
+          status: status.value, coins: +coins.value,
+          resources: { memory: +mem.value, cpu: +cpu.value, disk: +disk.value, servers: +slots.value },
+        };
+        if (password.value) patch.password = password.value;
         try { await CP.api.request('PATCH', `/admin/users/${u.id}`, patch); CP.ui.toast('User updated', 'ok'); ref.close(); done(); }
         catch (err) { CP.ui.toast(err.message, 'err'); } } }, 'Save')] });
   }
   async function delUser(u, done) {
     if (!(await CP.ui.confirm({ title: 'Delete user', message: `Delete ${u.username}?`, confirmText: 'Delete' }))) return;
     try { await CP.api.del(`/admin/users/${u.id}`); CP.ui.toast('Deleted', 'ok'); done(); } catch (err) { CP.ui.toast(err.message, 'err'); }
+  }
+
+  /* ---------------- Settings (economy / access) ---------------- */
+  async function settings(root) {
+    loading(root);
+    let s;
+    try { s = (await CP.api.adminSettings()).data; }
+    catch (e) { CP.clear(root); return root.appendChild(CP.empty('alert', e.message)); }
+    CP.clear(root);
+
+    const sw = (checked) => { const i = h('input', { type: 'checkbox', class: 'switch' }); i.checked = !!checked; return i; };
+    const numIn = (v) => h('input', { type: 'number', value: v, min: 0 });
+    const field = (label, input) => h('label', { class: 'field' }, h('span', {}, label), input);
+    const switchRow = (label, desc, input) => h('div', { class: 'switch-row' },
+      h('div', {}, h('b', {}, label), h('div', { class: 'muted', style: { fontSize: '12.5px' } }, desc)),
+      h('div', { style: { marginLeft: 'auto' } }, input));
+
+    const econEnabled = sw(s.economy.enabled);
+    const regEnabled = sw(s.registration.enabled);
+    const regApproval = sw(s.registration.requireApproval);
+    const dCoins = numIn(s.defaults.coins), dMem = numIn(s.defaults.memory), dCpu = numIn(s.defaults.cpu), dDisk = numIn(s.defaults.disk), dServers = numIn(s.defaults.servers);
+    const minMem = numIn(s.limits.minMemory), minCpu = numIn(s.limits.minCpu), minDisk = numIn(s.limits.minDisk);
+    const shop = {};
+    ['memory', 'cpu', 'disk', 'servers'].forEach((k) => { shop[k] = { price: numIn(s.shop[k].price), amount: numIn(s.shop[k].amount) }; });
+
+    const shopRow = (label, unit, o) => h('div', { class: 'grid', style: { gridTemplateColumns: '120px 1fr 1fr', gap: '0 12px', alignItems: 'end' } },
+      h('div', { style: { paddingBottom: '12px', fontWeight: '700' } }, label),
+      field('Price (coins)', o.price), field(`Amount (${unit})`, o.amount));
+
+    const save = h('button', { class: 'btn primary', html: `${icon('save', 15)} Save settings` });
+    save.onclick = async () => {
+      const patch = {
+        economy: { enabled: econEnabled.checked },
+        registration: { enabled: regEnabled.checked, requireApproval: regApproval.checked },
+        defaults: { coins: +dCoins.value, memory: +dMem.value, cpu: +dCpu.value, disk: +dDisk.value, servers: +dServers.value },
+        limits: { minMemory: +minMem.value, minCpu: +minCpu.value, minDisk: +minDisk.value },
+        shop: {
+          memory: { price: +shop.memory.price.value, amount: +shop.memory.amount.value },
+          cpu: { price: +shop.cpu.price.value, amount: +shop.cpu.amount.value },
+          disk: { price: +shop.disk.price.value, amount: +shop.disk.amount.value },
+          servers: { price: +shop.servers.price.value, amount: +shop.servers.amount.value },
+        },
+      };
+      try { await CP.api.adminUpdateSettings(patch); CP.app.economyEnabled = patch.economy.enabled; CP.ui.toast('Settings saved', 'ok'); }
+      catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
+
+    root.append(
+      h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } },
+        h('div', { class: 'card' },
+          h('h3', { html: `${icon('shield', 16)} Access` }),
+          h('div', { style: { marginTop: '8px' } },
+            switchRow('Allow sign-ups', 'Show "Create account" on the login page.', regEnabled),
+            switchRow('Require approval', 'New sign-ups must be approved before they can create servers.', regApproval),
+            switchRow('Economy & shop', 'Enable coins and the resource shop.', econEnabled))),
+        h('div', { class: 'card' },
+          h('h3', { html: `${icon('zap', 16)} New-user defaults` }),
+          h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px', marginTop: '8px' } },
+            field('Starting coins', dCoins), field('Server slots', dServers),
+            field('RAM (MB)', dMem), field('CPU (%)', dCpu), field('Disk (MB)', dDisk))),
+        h('div', { class: 'card' },
+          h('h3', { html: `${icon('sliders', 16)} Minimum per server` }),
+          h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px', marginTop: '8px' } },
+            field('Min RAM (MB)', minMem), field('Min CPU (%)', minCpu), field('Min Disk (MB)', minDisk)))),
+      h('div', { class: 'card', style: { marginTop: '18px' } },
+        h('h3', { html: `${icon('cart', 16)} Shop prices & amounts` }),
+        h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 14px' } }, 'Each purchase costs the price (coins) and grants the amount to the buyer\'s quota.'),
+        h('div', { style: { display: 'grid', gap: '8px' } },
+          shopRow('RAM', 'MB', shop.memory), shopRow('CPU', '%', shop.cpu),
+          shopRow('Disk', 'MB', shop.disk), shopRow('Server Slot', 'slots', shop.servers))),
+      h('div', { style: { marginTop: '18px' } }, save)
+    );
   }
 
   /* ---------------- Nodes ---------------- */

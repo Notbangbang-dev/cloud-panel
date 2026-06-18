@@ -16,7 +16,21 @@ const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 
-const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity'];
+const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings'];
+
+/** Global, admin-editable settings (economy, registration, defaults, shop). */
+const SETTINGS_DEFAULTS = {
+  economy: { enabled: true },
+  registration: { enabled: true, requireApproval: true },
+  defaults: { coins: 500, memory: 2048, cpu: 150, disk: 10240, servers: 2 },
+  limits: { minMemory: 256, minCpu: 25, minDisk: 1024 },
+  shop: {
+    memory: { price: 100, amount: 1024 },
+    cpu: { price: 150, amount: 50 },
+    disk: { price: 60, amount: 5120 },
+    servers: { price: 400, amount: 1 },
+  },
+};
 
 function uid(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -205,7 +219,14 @@ const db = {
       console.log('[db] seeded infrastructure (no default users)');
     }
     ensureEggs(); // idempotently add any newly-shipped egg templates
+    ensureSettings(); // economy / registration / defaults / shop
+    migrateUsers(); // backfill status/coins/resources on existing users
     return db;
+  },
+
+  /** The global settings document (always present after load). */
+  settings() {
+    return backend.get('settings', 'global') || { id: 'global', ...SETTINGS_DEFAULTS };
   },
 
   /** True when no users exist yet → the panel needs first-run setup. */
@@ -351,6 +372,45 @@ function ensureEggs() {
     }
   }
   if (added) console.log(`[db] added ${added} egg template(s) to the catalog`);
+}
+
+/** Recursively fill missing keys in target from defaults (no overwrite). */
+function fillDefaults(target, defaults) {
+  for (const k of Object.keys(defaults)) {
+    const dv = defaults[k];
+    if (dv && typeof dv === 'object' && !Array.isArray(dv)) {
+      if (!target[k] || typeof target[k] !== 'object') target[k] = {};
+      fillDefaults(target[k], dv);
+    } else if (target[k] === undefined) {
+      target[k] = dv;
+    }
+  }
+}
+
+/** Ensure the global settings document exists and has all keys. */
+function ensureSettings() {
+  const cur = backend.get('settings', 'global');
+  if (!cur) {
+    backend.insert('settings', { id: 'global', ...JSON.parse(JSON.stringify(SETTINGS_DEFAULTS)) });
+    return;
+  }
+  const before = JSON.stringify(cur);
+  fillDefaults(cur, SETTINGS_DEFAULTS);
+  if (JSON.stringify(cur) !== before) backend.update('settings', 'global', cur);
+}
+
+/** Backfill economy fields (status/coins/resources) on pre-existing users. */
+function migrateUsers() {
+  const s = backend.get('settings', 'global');
+  const d = (s && s.defaults) || SETTINGS_DEFAULTS.defaults;
+  for (const u of backend.all('users')) {
+    const patch = {};
+    if (u.status === undefined) patch.status = 'active';
+    if (u.coins === undefined) patch.coins = d.coins;
+    if (!u.resources || typeof u.resources !== 'object')
+      patch.resources = { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers };
+    if (Object.keys(patch).length) backend.update('users', u.id, patch);
+  }
 }
 
 /* ============================================================
