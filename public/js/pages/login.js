@@ -25,6 +25,10 @@
     const wrap = h('div', { class: 'auth' });
     const card = h('form', { class: 'auth-card' });
     wrap.appendChild(card);
+    wrap.appendChild(h('div', { class: 'auth-legal' },
+      h('a', { onclick: () => CP.app.go('/terms') }, 'Terms'),
+      h('span', {}, ' · '),
+      h('a', { onclick: () => CP.app.go('/privacy') }, 'Privacy')));
     appRoot.appendChild(wrap);
 
     const brand = () => h('div', { class: 'auth-brand' }, h('img', { src: '/img/logo.svg', alt: '' }), h('div', {}, h('h1', {}, 'Cloud Panel')));

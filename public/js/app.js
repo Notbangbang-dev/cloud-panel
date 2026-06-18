@@ -76,6 +76,8 @@
       if (head === 'account') return { route: 'account', params: {} };
       if (head === 'shop') return { route: 'shop', params: {} };
       if (head === 'afk') return { route: 'afk', params: {} };
+      if (head === 'terms') return { route: 'terms', params: {} };
+      if (head === 'privacy') return { route: 'privacy', params: {} };
       if (head === 'login') return { route: 'login', params: {} };
       return { route: 'dashboard', params: {} };
     },
@@ -84,6 +86,13 @@
       this.runCleanups();
       const appRoot = document.getElementById('app');
       const r = this.parse();
+
+      // Legal pages are public (work signed-in or out, no shell).
+      if ((r.route === 'terms' || r.route === 'privacy') && CP.pages[r.route]) {
+        this.shell = null;
+        CP.pages[r.route](appRoot);
+        return;
+      }
 
       // Auth gating
       if (!this.user) {
