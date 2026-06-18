@@ -32,6 +32,16 @@ const SETTINGS_DEFAULTS = {
     servers: { price: 400, amount: 1 },
     backups: { price: 250, amount: 1 },
   },
+  // Look & feel — fully admin-customizable theming (see services/appearance.js).
+  // NOTE: keep this default in sync with DEFAULT_APPEARANCE in services/appearance.js.
+  appearance: {
+    preset: 'nebula',
+    colors: {}, // optional overrides: { bg, surface, text, primary, secondary, accent }
+    background: { type: 'preset', value: '', fit: 'cover', blur: 0, dim: 35, fixed: true },
+    effects: { animations: true, glass: true, radius: 16 },
+    brand: { name: '', tagline: '' },
+    customCss: '',
+  },
 };
 
 function uid(prefix) {

@@ -92,6 +92,30 @@
     adminDecline(id) { return this.post(`/admin/users/${id}/decline`); },
     adminCoins(id, amount) { return this.post(`/admin/users/${id}/coins`, { amount }); },
 
+    /* admin appearance / theming */
+    adminAppearance() { return this.get('/admin/appearance'); },
+    adminSaveAppearance(appearance) { return this.put('/admin/appearance', { appearance }); },
+    adminResetAppearance() { return this.post('/admin/appearance/reset'); },
+    async adminPreviewAppearance(appearance) {
+      const res = await fetch('/api/admin/appearance/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: 'Bearer ' + this.token } : {}) },
+        body: JSON.stringify({ appearance }),
+      });
+      if (!res.ok) { let m = 'Preview failed'; try { m = (await res.json()).error || m; } catch {} throw new Error(m); }
+      return res.text();
+    },
+    async adminUploadAppearance(file) {
+      const res = await fetch('/api/admin/appearance/upload?filename=' + encodeURIComponent(file.name), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream', ...(this.token ? { Authorization: 'Bearer ' + this.token } : {}) },
+        body: file,
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || `Upload failed (${res.status})`);
+      return d.data;
+    },
+
     /* console websocket */
     consoleSocket(serverId, onMessage) {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';

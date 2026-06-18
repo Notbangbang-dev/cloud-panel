@@ -14,11 +14,18 @@
     { id: 'allocations', label: 'Allocations', icon: 'network' },
     { id: 'eggs', label: 'Eggs', icon: 'box' },
     { id: 'settings', label: 'Settings', icon: 'sliders' },
+    { id: 'appearance', label: 'Appearance', icon: 'palette' },
   ];
+
+  /** Drop any unsaved live-preview and restore the saved theme. */
+  function removeAppearancePreview() {
+    if (document.getElementById('cp-appearance-preview') && CP.appearance) CP.appearance.clearPreview();
+  }
 
   CP.pages.admin = async function (root, ctx) {
     if (!CP.app.user.admin) { root.appendChild(CP.empty('shield', 'Administrator access required.')); return; }
     ctx.setCrumbs([{ label: 'Admin' }]);
+    ctx.onCleanup(removeAppearancePreview);
 
     let active = ctx.params.tab && SUBS.some((s) => s.id === ctx.params.tab) ? ctx.params.tab : 'overview';
 
@@ -37,8 +44,9 @@
     root.append(tabs, content);
 
     function render() {
+      removeAppearancePreview(); // leaving a tab discards an unsaved theme preview
       CP.clear(content);
-      ({ overview, servers, users, nodes, locations, allocations, eggs, settings }[active])(content);
+      ({ overview, servers, users, nodes, locations, allocations, eggs, settings, appearance: appearanceTab }[active])(content);
     }
     render();
   };
@@ -560,5 +568,209 @@
       )));
       root.appendChild(grid);
     } catch (err) { CP.clear(root); root.appendChild(CP.empty('alert', err.message)); }
+  }
+
+  /* ---------------- Appearance / Theming ---------------- */
+  function toHex(v) {
+    if (typeof v !== 'string') return '#666666';
+    const s = v.trim();
+    if (/^#[0-9a-fA-F]{3}$/.test(s)) return '#' + s.slice(1).split('').map((c) => c + c).join('');
+    if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
+    if (/^#[0-9a-fA-F]{8}$/.test(s)) return s.slice(0, 7);
+    return '#666666';
+  }
+
+  async function appearanceTab(root) {
+    loading(root);
+    let payload;
+    try { payload = (await CP.api.adminAppearance()).data; }
+    catch (e) { CP.clear(root); return root.appendChild(CP.empty('alert', e.message)); }
+    CP.clear(root);
+
+    const presets = payload.presets || [];
+    const draft = payload.appearance || {};
+    draft.colors = draft.colors || {};
+    draft.background = draft.background || { type: 'preset', value: '', fit: 'cover', blur: 0, dim: 35, fixed: true };
+    draft.effects = draft.effects || { animations: true, glass: true, radius: 16 };
+    draft.brand = draft.brand || { name: '', tagline: '' };
+    if (typeof draft.customCss !== 'string') draft.customCss = '';
+
+    const presetById = Object.fromEntries(presets.map((p) => [p.id, p]));
+    const palOf = (id) => (presetById[id] && presetById[id].palette) || {};
+    const effColor = (key) => draft.colors[key] || palOf(draft.preset)[key] || '#000000';
+
+    let timer;
+    function schedulePreview() {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        try { CP.appearance.preview(await CP.api.adminPreviewAppearance(draft), draft); }
+        catch (e) { /* preview is best-effort */ }
+      }, 140);
+    }
+
+    /* Preset gallery */
+    const presetGrid = h('div', { class: 'theme-presets' });
+    function renderPresets() {
+      CP.clear(presetGrid);
+      presets.forEach((p) => presetGrid.appendChild(h('div', {
+        class: 'theme-preset' + (draft.preset === p.id ? ' active' : ''),
+        onclick: () => { draft.preset = p.id; draft.colors = {}; renderPresets(); syncColors(); schedulePreview(); },
+      },
+        h('div', { class: 'tp-swatch', style: { background: p.bg } }, ...p.swatch.map((c) => h('i', { style: { background: c } }))),
+        h('div', { class: 'tp-name' }, p.name + (p.light ? ' ☀' : '')),
+        h('div', { class: 'tp-tag' }, p.tag))));
+    }
+    renderPresets();
+
+    /* Colors */
+    const colorKeys = [['primary', 'Primary'], ['secondary', 'Secondary'], ['accent', 'Accent'], ['bg', 'Background'], ['surface', 'Surface'], ['text', 'Text']];
+    const colorInputs = {};
+    function syncColors() { colorKeys.forEach(([k]) => { if (colorInputs[k]) colorInputs[k].value = toHex(effColor(k)); }); }
+    const colorRows = colorKeys.map(([k, label]) => {
+      const ci = h('input', { type: 'color', value: toHex(effColor(k)) });
+      ci.addEventListener('input', () => { draft.colors[k] = ci.value; schedulePreview(); });
+      colorInputs[k] = ci;
+      return h('div', { class: 'color-row' }, ci, h('span', { class: 'cr-label' }, label),
+        h('button', { class: 'btn sm ghost', title: 'Follow preset', onclick: () => { delete draft.colors[k]; ci.value = toHex(effColor(k)); schedulePreview(); } }, 'Reset'));
+    });
+
+    /* Background */
+    const bgTypes = [['preset', 'Preset'], ['color', 'Solid color'], ['gradient', 'Gradient'], ['image', 'Image'], ['gif', 'GIF'], ['video', 'Video']];
+    const bgType = h('select', {}, ...bgTypes.map(([v, l]) => h('option', { value: v, selected: draft.background.type === v }, l)));
+    const bgControls = h('div', { class: 'bg-controls' });
+    bgType.addEventListener('change', () => { draft.background.type = bgType.value; renderBg(); schedulePreview(); });
+
+    const GRADIENTS = [
+      'linear-gradient(135deg, #22d3ee, #6366f1, #a855f7)',
+      'linear-gradient(135deg, #0ea5e9, #2dd4bf)',
+      'linear-gradient(135deg, #f43f5e, #f59e0b)',
+      'radial-gradient(80% 80% at 50% 0%, #6366f1, #070a12)',
+      'conic-gradient(from 180deg at 50% 50%, #22d3ee, #a855f7, #22d3ee)',
+    ];
+
+    function slider(label, min, max, val, onInput) {
+      const inp = h('input', { type: 'range', min, max, value: val });
+      const out = h('b', { class: 'mono' }, String(val));
+      inp.addEventListener('input', () => { out.textContent = inp.value; onInput(+inp.value); });
+      return h('label', { class: 'field range-field' }, h('span', {}, label, ' ', out), inp);
+    }
+
+    function assetControls(accept) {
+      const url = h('input', { value: draft.background.value || '', placeholder: 'https://…  or upload →' });
+      const thumb = h('div', { class: 'bg-thumb' });
+      function updateThumb() {
+        if (draft.background.type === 'video') { thumb.style.backgroundImage = 'none'; thumb.style.background = '#05070d'; thumb.innerHTML = `<div class="muted" style="display:grid;place-items:center;height:100%">${icon('film', 26)}</div>`; }
+        else if (draft.background.value) { thumb.innerHTML = ''; thumb.style.backgroundImage = `url("${draft.background.value}")`; }
+        else { thumb.style.backgroundImage = 'none'; thumb.innerHTML = '<div class="muted" style="display:grid;place-items:center;height:100%">No image selected</div>'; }
+      }
+      url.addEventListener('input', () => { draft.background.value = url.value.trim(); updateThumb(); schedulePreview(); });
+      const file = h('input', { type: 'file', accept, style: { display: 'none' } });
+      file.addEventListener('change', async () => {
+        const f = file.files[0]; if (!f) return;
+        try { CP.ui.toast('Uploading…', 'info'); const d = await CP.api.adminUploadAppearance(f); draft.background.value = d.url; url.value = d.url; updateThumb(); schedulePreview(); CP.ui.toast('Uploaded', 'ok'); }
+        catch (e) { CP.ui.toast(e.message, 'err'); }
+        file.value = '';
+      });
+      updateThumb();
+      return h('div', {}, h('div', { class: 'asset-row' }, url, file, h('button', { class: 'btn', html: `${icon('up', 14)} Upload`, onclick: () => file.click() })), thumb);
+    }
+
+    function renderBg() {
+      CP.clear(bgControls);
+      const b = draft.background;
+      if (b.type === 'preset') { bgControls.appendChild(h('p', { class: 'muted', style: { fontSize: '13px', margin: 0 } }, "Uses the preset's animated nebula background.")); return; }
+      if (b.type === 'color') {
+        const ci = h('input', { type: 'color', value: toHex(b.value || palOf(draft.preset).bg || '#070a12') });
+        ci.addEventListener('input', () => { b.value = ci.value; schedulePreview(); });
+        bgControls.appendChild(h('div', { class: 'color-row' }, ci, h('span', { class: 'cr-label' }, 'Background color')));
+        return;
+      }
+      if (b.type === 'gradient') {
+        const ta = h('input', { value: b.value || GRADIENTS[0], placeholder: 'linear-gradient(...)' });
+        ta.addEventListener('input', () => { b.value = ta.value.trim(); schedulePreview(); });
+        const quick = h('div', { class: 'grad-quick' }, ...GRADIENTS.map((g) => h('button', { class: 'grad-chip', style: { backgroundImage: g }, title: g, onclick: () => { b.value = g; ta.value = g; schedulePreview(); } })));
+        bgControls.append(h('label', { class: 'field' }, h('span', {}, 'CSS gradient'), ta), quick);
+        return;
+      }
+      const a = assetControls(b.type === 'video' ? 'video/*' : 'image/*');
+      bgControls.appendChild(a);
+      bgControls.appendChild(slider('Darken overlay (%)', 0, 90, b.dim, (v) => { b.dim = v; schedulePreview(); }));
+      if (b.type !== 'video') {
+        bgControls.appendChild(slider('Blur (px)', 0, 40, b.blur, (v) => { b.blur = v; schedulePreview(); }));
+        const fit = h('select', {}, ...['cover', 'contain', 'tile', 'center'].map((f) => h('option', { value: f, selected: b.fit === f }, f)));
+        fit.addEventListener('change', () => { b.fit = fit.value; schedulePreview(); });
+        bgControls.appendChild(h('label', { class: 'field' }, h('span', {}, 'Fit'), fit));
+      }
+      const fixed = h('input', { type: 'checkbox', class: 'switch' }); fixed.checked = !!b.fixed;
+      fixed.addEventListener('change', () => { b.fixed = fixed.checked; schedulePreview(); });
+      bgControls.appendChild(h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Fixed (parallax)'), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Stays put while content scrolls.')), h('div', { style: { marginLeft: 'auto' } }, fixed)));
+    }
+    renderBg();
+
+    /* Effects */
+    const fxAnim = h('input', { type: 'checkbox', class: 'switch' }); fxAnim.checked = !!draft.effects.animations;
+    fxAnim.addEventListener('change', () => { draft.effects.animations = fxAnim.checked; schedulePreview(); });
+    const fxGlass = h('input', { type: 'checkbox', class: 'switch' }); fxGlass.checked = !!draft.effects.glass;
+    fxGlass.addEventListener('change', () => { draft.effects.glass = fxGlass.checked; schedulePreview(); });
+    const radius = slider('Corner radius (px)', 0, 28, draft.effects.radius, (v) => { draft.effects.radius = v; schedulePreview(); });
+
+    /* Branding */
+    const brandName = h('input', { value: draft.brand.name || '', placeholder: CP.app.brand.name, maxlength: '40' });
+    brandName.addEventListener('input', () => { draft.brand.name = brandName.value; });
+    const brandTag = h('input', { value: draft.brand.tagline || '', placeholder: CP.app.brand.tagline, maxlength: '80' });
+    brandTag.addEventListener('input', () => { draft.brand.tagline = brandTag.value; });
+
+    /* Custom CSS */
+    const customCss = h('textarea', { placeholder: '/* Anything goes, e.g. */\n.sidebar { box-shadow: 0 0 40px #a855f7; }', style: { minHeight: '120px' } });
+    customCss.value = draft.customCss || '';
+    customCss.addEventListener('input', () => { draft.customCss = customCss.value; schedulePreview(); });
+
+    /* Actions */
+    const dropPreview = () => { const el = document.getElementById('cp-appearance-preview'); if (el) el.remove(); };
+    const saveBtn = h('button', { class: 'btn primary', html: `${icon('save', 15)} Save theme` });
+    saveBtn.onclick = async () => {
+      try {
+        await CP.api.adminSaveAppearance(draft);
+        CP.appearance.reloadGlobal(); dropPreview();
+        if (draft.brand.name) CP.app.brand.name = draft.brand.name;
+        CP.ui.toast('Theme saved — live for everyone', 'ok');
+      } catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
+    const revertBtn = h('button', { class: 'btn ghost', html: `${icon('back', 14)} Discard`, onclick: () => { removeAppearancePreview(); appearanceTab(CP.clear(root)); } });
+    const resetBtn = h('button', { class: 'btn ghost', html: `${icon('refresh', 14)} Reset to default` });
+    resetBtn.onclick = async () => {
+      if (!(await CP.ui.confirm({ title: 'Reset theme', message: 'Restore the default Nebula theme and clear all customizations?', confirmText: 'Reset' }))) return;
+      try { await CP.api.adminResetAppearance(); CP.appearance.reloadGlobal(); dropPreview(); CP.ui.toast('Theme reset', 'ok'); appearanceTab(CP.clear(root)); }
+      catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
+
+    /* Layout */
+    root.append(
+      h('div', { class: 'note', style: { marginBottom: '18px' }, html: `${icon('info', 15)} Changes preview live across the panel. Nothing changes for other users until you <b>Save</b>.` }),
+      h('div', { class: 'card' },
+        h('h3', { html: `${icon('palette', 16)} Theme presets` }),
+        h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 14px' } }, 'Pick a base palette, then fine-tune below.'),
+        presetGrid),
+      h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', marginTop: '18px' } },
+        h('div', { class: 'card' }, h('h3', { html: `${icon('droplet', 16)} Colors` }),
+          h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 12px' } }, 'Override palette colors, or Reset to follow the preset.'),
+          h('div', { class: 'color-grid' }, ...colorRows)),
+        h('div', { class: 'card' }, h('h3', { html: `${icon('sliders', 16)} Effects` }),
+          h('div', { style: { marginTop: '4px' } },
+            h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Background animations'), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Drifting starfield + glows.')), h('div', { style: { marginLeft: 'auto' } }, fxAnim)),
+            h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Glass / blur panels'), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Frosted translucent surfaces.')), h('div', { style: { marginLeft: 'auto' } }, fxGlass))),
+          radius),
+        h('div', { class: 'card' }, h('h3', { html: `${icon('image', 16)} Background` }),
+          h('label', { class: 'field' }, h('span', {}, 'Type'), bgType), bgControls)),
+      h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', marginTop: '18px' } },
+        h('div', { class: 'card' }, h('h3', { html: `${icon('rocket', 16)} Branding` }),
+          h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 12px' } }, 'Optional — leave blank to use the defaults.'),
+          h('label', { class: 'field' }, h('span', {}, 'Panel name'), brandName),
+          h('label', { class: 'field' }, h('span', {}, 'Tagline'), brandTag)),
+        h('div', { class: 'card' }, h('h3', { html: `${icon('edit', 16)} Custom CSS` }),
+          h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 10px' } }, 'Advanced — injected site-wide. Make it insane.'),
+          customCss)),
+      h('div', { class: 'btn-row', style: { marginTop: '20px', alignItems: 'center' } }, saveBtn, revertBtn, h('div', { style: { flex: 1 } }), resetBtn)
+    );
   }
 })();

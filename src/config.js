@@ -103,6 +103,8 @@ const config = {
   volumesDir: process.env.CP_VOLUMES_DIR || path.join(DATA_DIR, 'volumes'),
   // Per-server backups (zip snapshots): <backupsDir>/<serverId>/<backupId>.zip
   backupsDir: process.env.CP_BACKUPS_DIR || path.join(DATA_DIR, 'backups'),
+  // Admin-uploaded assets (theme backgrounds: images / gifs / video). Served at /uploads.
+  uploadsDir: process.env.CP_UPLOADS_DIR || path.join(DATA_DIR, 'uploads'),
   hostKeyFile:
     process.env.CP_SFTP_HOSTKEY || path.join(DATA_DIR, 'sftp_host.key'),
 

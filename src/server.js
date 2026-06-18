@@ -11,6 +11,8 @@ const authRoutes = require('./routes/auth');
 const setupRoutes = require('./routes/setup');
 const clientRoutes = require('./routes/client');
 const adminRoutes = require('./routes/admin');
+const appearanceRoutes = require('./routes/appearance');
+const appearance = require('./services/appearance');
 const consoleWs = require('./ws/console');
 const sftp = require('./sftp/sftpServer');
 const { securityHeaders } = require('./middleware');
@@ -26,9 +28,14 @@ app.use(express.urlencoded({ extended: true }));
 
 // ---- API ------------------------------------------------------------------
 app.get('/api/health', (req, res) => {
+  let brand = config.brand;
+  try {
+    const b = appearance.get().brand || {};
+    brand = { name: b.name || config.brand.name, tagline: b.tagline || config.brand.tagline };
+  } catch { /* fall back to config brand */ }
   res.json({
     status: 'ok',
-    brand: config.brand,
+    brand,
     ports: { web: config.webPort, sftp: config.sftpPort },
     store: db.backend ? db.backend.kind : 'unknown',
     time: new Date().toISOString(),
@@ -37,6 +44,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/setup', setupRoutes); // public — must be before the authed client router
+app.use('/api', appearanceRoutes); // public theme CSS/JSON — before the authed client router
 app.use('/api', clientRoutes);
 app.use('/api/admin', adminRoutes);
 
@@ -44,6 +52,8 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Endpoint not found'
 
 // ---- Static frontend ------------------------------------------------------
 const publicDir = path.join(config.root, 'public');
+// Admin-uploaded theme assets (images / gifs / video).
+app.use('/uploads', express.static(config.uploadsDir, { maxAge: '7d' }));
 app.use(express.static(publicDir));
 // SPA fallback — non-API routes return the app shell.
 app.get('*', (req, res) => {

@@ -2,13 +2,17 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const db = require('../db');
 const auth = require('../auth');
 const config = require('../config');
 const pm = require('../services/processManager');
 const users = require('../services/users');
 const settings = require('../services/settings');
+const appearance = require('../services/appearance');
 const backups = require('../services/backups');
+const pkg = require('../../package.json');
 const { serializeServer, serializeNode } = require('./helpers');
 
 const router = express.Router();
@@ -32,7 +36,7 @@ router.get('/overview', (req, res) => {
       },
       nodes: db.all('nodes').map(serializeNode),
       activity: db.all('activity').slice(0, 15),
-      version: '1.0.0',
+      version: pkg.version,
       ports: { web: config.webPort, sftp: config.sftpPort },
     },
   });
@@ -130,6 +134,58 @@ router.put('/settings', (req, res) => {
   const updated = settings.update(req.body || {});
   db.log({ type: 'admin', userId: req.user.id, message: 'Updated panel settings' });
   res.json({ data: updated });
+});
+
+// ---- Appearance / theming --------------------------------------------------
+
+router.get('/appearance', (req, res) => {
+  res.json({ data: { appearance: appearance.get(), presets: appearance.presetList() } });
+});
+
+/** Save the theme. Body: { appearance: {...} } (full document — replaces). */
+router.put('/appearance', (req, res) => {
+  const patch = req.body && req.body.appearance ? req.body.appearance : req.body || {};
+  settings.update({ appearance: patch });
+  db.log({ type: 'admin', userId: req.user.id, message: 'Updated appearance / theme' });
+  res.json({ data: { appearance: appearance.get() } });
+});
+
+/** Reset the theme to the shipped default. */
+router.post('/appearance/reset', (req, res) => {
+  settings.update({ appearance: JSON.parse(JSON.stringify(appearance.DEFAULT_APPEARANCE)) });
+  db.log({ type: 'admin', userId: req.user.id, message: 'Reset appearance to defaults' });
+  res.json({ data: { appearance: appearance.get() } });
+});
+
+/** Live-preview CSS for an unsaved draft (single source of truth = the engine). */
+router.post('/appearance/preview', (req, res) => {
+  try {
+    const draft = req.body && req.body.appearance ? req.body.appearance : req.body || {};
+    res.type('text/css').send(appearance.generateCss(draft));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/** Upload a background asset (image / gif / video) as raw bytes. */
+const UPLOAD_TYPES = { png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', mp4: 'video', webm: 'video', ogg: 'video' };
+router.post('/appearance/upload', express.raw({ type: () => true, limit: '40mb' }), (req, res) => {
+  const filename = String(req.query.filename || 'upload');
+  const ext = path.extname(filename).toLowerCase().replace('.', '').slice(0, 8);
+  if (!UPLOAD_TYPES[ext])
+    return res.status(400).json({ error: 'Unsupported file type. Use png, jpg, gif, webp, svg, mp4 or webm.' });
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: 'Empty upload' });
+  const dir = path.join(config.uploadsDir, 'appearance');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const name = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+    fs.writeFileSync(path.join(dir, name), buf);
+    db.log({ type: 'admin', userId: req.user.id, message: `Uploaded theme asset ${name}` });
+    res.status(201).json({ data: { url: `/uploads/appearance/${name}`, type: UPLOAD_TYPES[ext], name } });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save upload' });
+  }
 });
 
 // ---- Locations ------------------------------------------------------------

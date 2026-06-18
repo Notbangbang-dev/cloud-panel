@@ -3,6 +3,7 @@
 /** Read/update the global, admin-editable settings (economy, registration, shop). */
 
 const db = require('../db');
+const appearance = require('./appearance');
 
 const get = () => db.settings();
 const defaults = () => get().defaults;
@@ -33,6 +34,10 @@ function update(patch = {}) {
   const clean = {};
   for (const k of allowed) if (patch[k] !== undefined) clean[k] = patch[k];
   deepMerge(cur, clean);
+
+  // Appearance is replaced wholesale (the editor always sends a full document)
+  // and fully validated/normalized by its own engine.
+  if (patch.appearance !== undefined) cur.appearance = appearance.sanitize(patch.appearance);
 
   cur.economy.enabled = !!cur.economy.enabled;
   cur.registration.enabled = !!cur.registration.enabled;
