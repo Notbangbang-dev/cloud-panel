@@ -4,7 +4,7 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.1.1] — 2026-06-19
+## [1.4.3] — 2026-06-19
 
 ### 🐛 Fixed
 - **Admin → Users:** the "Pending approval" heading rendered raw `<svg>` markup
@@ -17,7 +17,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
   Removing coins no longer requires typing a negative number (balances still
   floor at 0).
 
-## [1.1.0] — 2026-06-18
+## [1.4.2] — 2026-06-18
 
 ### ✨ Added — Appearance & Theming (admin console)
 
