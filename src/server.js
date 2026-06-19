@@ -15,11 +15,13 @@ const appearanceRoutes = require('./routes/appearance');
 const downloadRoutes = require('./routes/download');
 const appearance = require('./services/appearance');
 const automations = require('./services/automations');
+const isolation = require('./services/isolation');
 const consoleWs = require('./ws/console');
 const sftp = require('./sftp/sftpServer');
 const { securityHeaders } = require('./middleware');
 
 db.load();
+isolation.init(); // optional: lock panel internals + enable per-server-user isolation
 automations.init(); // start watching consoles for servers that have rules
 
 const app = express();

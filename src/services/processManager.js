@@ -8,6 +8,7 @@
  */
 
 const { spawn } = require('child_process');
+const isolation = require('./isolation');
 const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
@@ -205,10 +206,12 @@ const manager = {
 
     let proc;
     try {
+      isolation.chownTree(dir); // make sure the unprivileged server user owns its volume
       proc = spawn(program, args, {
         cwd: dir,
         env: buildEnv(server, egg),
         windowsHide: true,
+        ...isolation.spawnCreds(), // drop to the server user when isolation is enabled
       });
     } catch (err) {
       r.setStatus('crashed');

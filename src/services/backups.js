@@ -8,6 +8,7 @@ const path = require('path');
 const config = require('../config');
 const db = require('../db');
 const files = require('./files');
+const isolation = require('./isolation');
 
 function backupDir(serverId) {
   const dir = path.join(config.backupsDir, serverId);
@@ -73,6 +74,7 @@ async function restore(server, backupId) {
     if (written > budget) { files.invalidateDisk(server.id); throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }
     await fsp.mkdir(path.dirname(target), { recursive: true });
     await fsp.writeFile(target, data);
+    isolation.chown(target);
     restored++;
   }
   files.invalidateDisk(server.id);

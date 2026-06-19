@@ -34,6 +34,54 @@ Recommended hardening:
 - **Firewall** the SFTP port (default 5657) and the panel port to where they're
   needed.
 
+## Enabling built-in server isolation (recommended for untrusted users)
+
+The panel supports running every game server as a dedicated **unprivileged OS
+user** so server code can't read the panel's database/secret or other servers.
+This requires the panel to run as **root** (so it can drop privileges per
+server). On your VPS (paths assume the default `/opt/cloud-panel`):
+
+```bash
+# 1) Create the unprivileged server user
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin cp-servers
+id -u cp-servers   # note the UID
+id -g cp-servers   # note the GID
+
+# 2) Hand the server volumes to it; lock panel internals to root
+sudo chown -R cp-servers:cp-servers /opt/cloud-panel/data/volumes
+sudo chown root:root /opt/cloud-panel/.env /opt/cloud-panel/data/cloud-panel.db 2>/dev/null
+
+# 3) Run the panel as root with the server uid/gid, then restart
+sudo systemctl edit cloud-panel    # add the overrides below
+```
+In the override (or the unit / `.env`):
+```
+[Service]
+User=root
+Environment=CP_SERVER_UID=<uid-from-step-1>
+Environment=CP_SERVER_GID=<gid-from-step-1>
+```
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart cloud-panel
+```
+
+On boot the panel logs `[isolation] active — servers run as uid:… gid:…`, locks
+`data/` (711), the database, `.env` and the host key to root (600), closes
+`backups/` (700), and chowns each volume to the server user on start.
+
+**Verify** with the C1 probe (a server that tries to read `cloud-panel.db` /
+`.env`): it should now print `blocked … EACCES`.
+
+Caveats:
+- The panel runs as **root** to drop privileges (the standard model for this).
+  Its own attack surface is the authenticated API.
+- A single shared `cp-servers` user isolates servers from the **panel**, but not
+  from **each other**. For per-tenant isolation, use a unique UID per server or
+  containers.
+- If `CP_SERVER_UID/GID` are set but the panel is **not** root, isolation stays
+  **off** and the panel logs a warning (it never silently runs unisolated as if
+  isolated).
+
 ## Deployment hardening checklist
 
 - **Reverse proxy / TLS.** Terminate HTTPS at a proxy (Nginx/Caddy/Cloudflare).

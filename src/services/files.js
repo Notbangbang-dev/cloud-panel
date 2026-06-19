@@ -9,10 +9,12 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const config = require('../config');
+const isolation = require('./isolation');
 
 function rootFor(server) {
   const dir = path.join(config.volumesDir, server.id);
-  fs.mkdirSync(dir, { recursive: true });
+  const created = fs.mkdirSync(dir, { recursive: true });
+  if (created) isolation.chown(dir); // hand a new volume to the server user
   return dir;
 }
 
@@ -165,6 +167,7 @@ async function write(server, rel, content) {
   assertQuota(server, Buffer.byteLength(content ?? '', 'utf8'));
   await fsp.mkdir(path.dirname(abs), { recursive: true });
   await fsp.writeFile(abs, content ?? '', 'utf8');
+  isolation.chown(abs);
   invalidateDisk(server.id);
   return toRel(server, abs);
 }
@@ -172,6 +175,7 @@ async function write(server, rel, content) {
 async function mkdir(server, rel) {
   const abs = resolve(server, rel);
   await fsp.mkdir(abs, { recursive: true });
+  isolation.chown(abs);
   return toRel(server, abs);
 }
 
@@ -180,6 +184,7 @@ async function rename(server, from, to) {
   const b = resolve(server, to);
   await fsp.mkdir(path.dirname(b), { recursive: true });
   await fsp.rename(a, b);
+  isolation.chown(b);
   return toRel(server, b);
 }
 
@@ -217,7 +222,7 @@ function saveStream(server, rel, readable, { maxBytes = MAX_UPLOAD } = {}) {
     });
     readable.on('error', fail);
     ws.on('error', fail);
-    ws.on('finish', () => { if (!failed) { invalidateDisk(server.id); res(toRel(server, abs)); } });
+    ws.on('finish', () => { if (!failed) { isolation.chown(abs); invalidateDisk(server.id); res(toRel(server, abs)); } });
     readable.pipe(ws);
   });
 }
@@ -247,6 +252,7 @@ async function unzip(server, rel) {
     if (written > budget) { invalidateDisk(server.id); throw Object.assign(new Error('Archive contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }
     await fsp.mkdir(path.dirname(target), { recursive: true });
     await fsp.writeFile(target, data);
+    isolation.chown(target);
     if (++count > 20000) { invalidateDisk(server.id); throw new Error('Too many files in archive'); }
   }
   invalidateDisk(server.id);

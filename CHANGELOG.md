@@ -4,6 +4,24 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] — 2026-06-19
+
+### 🔒 Added — Optional server-process isolation (mitigates audit finding C1)
+- Game servers can now run as a dedicated **unprivileged OS user** instead of the
+  panel's user, so server code can no longer read the panel's database, JWT
+  secret or other servers' files.
+- Enable by running the panel as root and setting `CP_SERVER_UID` / `CP_SERVER_GID`
+  (full steps in `SECURITY.md`). Each server is spawned with **dropped
+  privileges**; volumes are chowned to the server user; and `data/`, the
+  database, `.env`, the SFTP host key and `backups/` are locked to root on boot.
+- **Fully opt-in and guarded** — with no config (or when the panel isn't running
+  as root) behavior is unchanged, and a warning is logged if isolation is
+  requested but can't be applied (never silently runs unisolated-as-isolated).
+
+> A shared server user isolates servers from the **panel** (the C1 worst case —
+> stealing the admin-signing secret + reading all password hashes). Isolating
+> servers from **each other** still needs a per-server user or containers.
+
 ## [1.5.2] — 2026-06-19
 
 ### 🔒 Security hardening (round 2)

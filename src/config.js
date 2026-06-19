@@ -110,6 +110,13 @@ const config = {
   jwtExpiresIn: process.env.CP_JWT_TTL || '7d',
   bcryptRounds: int(process.env.CP_BCRYPT_ROUNDS, 10),
 
+  // ---- Server process isolation (optional; POSIX; panel must run as root) --
+  // When set, each game server is spawned as this unprivileged uid/gid so it
+  // can't read the panel's data/secrets or other panel-owned files. Obtain
+  // them with `id -u cp-servers` / `id -g cp-servers`. See SECURITY.md.
+  serverUid: int(process.env.CP_SERVER_UID, null),
+  serverGid: int(process.env.CP_SERVER_GID, null),
+
   // ---- Storage ------------------------------------------------------------
   dataDir: DATA_DIR,
   // Real database (SQLite). Falls back to the JSON file if better-sqlite3
