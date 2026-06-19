@@ -23,7 +23,9 @@ automations.init(); // start watching consoles for servers that have rules
 
 const app = express();
 app.disable('x-powered-by');
-if (config.trustProxy) app.set('trust proxy', true); // behind a domain / proxy / Cloudflare Tunnel
+// Only when explicitly configured (see CP_TRUST_PROXY). Off by default so the
+// IP-based rate limiter can't be bypassed via spoofed X-Forwarded-For headers.
+if (config.trustProxy !== false) app.set('trust proxy', config.trustProxy);
 app.use(securityHeaders);
 app.use(express.json({ limit: '8mb' }));
 app.use(express.urlencoded({ extended: true }));

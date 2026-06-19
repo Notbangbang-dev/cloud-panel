@@ -54,6 +54,32 @@ function diskUsage(server) {
   return bytes;
 }
 
+/**
+ * Reject paths that escape the volume via a SYMLINK. Logical containment
+ * (string checks) isn't enough: a server process can drop a symlink inside its
+ * own volume pointing at host paths (e.g. /etc or the panel's data/). We
+ * realpath the nearest EXISTING ancestor of `abs` and require it to still live
+ * inside the real root, so reads/writes can't follow a symlink out of bounds.
+ */
+function assertNoSymlinkEscape(root, abs) {
+  let realRoot;
+  try { realRoot = fs.realpathSync(root); } catch { realRoot = root; }
+  let probe = abs;
+  for (let i = 0; i < 4096 && probe && probe !== path.dirname(probe); i++) {
+    let real;
+    try {
+      real = fs.realpathSync(probe);
+    } catch (e) {
+      if (e.code === 'ENOENT') { probe = path.dirname(probe); continue; } // not created yet
+      throw Object.assign(new Error('Path check failed'), { code: 'EACCES' });
+    }
+    if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
+      throw Object.assign(new Error('Path escapes server root (symlink)'), { code: 'EACCES' });
+    }
+    return; // nearest existing ancestor is inside the real root
+  }
+}
+
 /** Resolve a client path safely within the server root. Returns absolute path. */
 function resolve(server, rel) {
   const root = rootFor(server);
@@ -62,6 +88,7 @@ function resolve(server, rel) {
   if (abs !== root && !abs.startsWith(root + path.sep)) {
     throw Object.assign(new Error('Path escapes server root'), { code: 'EACCES' });
   }
+  assertNoSymlinkEscape(root, abs);
   return abs;
 }
 

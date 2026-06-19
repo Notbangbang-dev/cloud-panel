@@ -18,7 +18,35 @@ const ssh2 = require('ssh2');
 const config = require('../config');
 const db = require('../db');
 const auth = require('../auth');
+const files = require('../services/files');
 const { canAccessServer } = require('../routes/helpers');
+
+// ---- SFTP auth brute-force throttle (per source IP) -----------------------
+// The web login is rate-limited; SFTP password auth must be too, or it becomes
+// an unthrottled online password-guessing oracle.
+const AUTH_MAX_FAILS = 8; // failures before a temporary lockout
+const AUTH_WINDOW_MS = 5 * 60 * 1000;
+const AUTH_LOCK_MS = 5 * 60 * 1000;
+const authFails = new Map(); // ip -> { count, reset, until }
+
+function authLocked(ip) {
+  const r = authFails.get(ip);
+  return !!(r && r.until && Date.now() < r.until);
+}
+function authRecordFail(ip) {
+  const now = Date.now();
+  let r = authFails.get(ip);
+  if (!r || now > r.reset) r = { count: 0, reset: now + AUTH_WINDOW_MS, until: 0 };
+  r.count++;
+  if (r.count >= AUTH_MAX_FAILS) r.until = now + AUTH_LOCK_MS;
+  authFails.set(ip, r);
+}
+function authClear(ip) { authFails.delete(ip); }
+const _authSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of authFails) if (now > (v.until || 0) && now > v.reset) authFails.delete(k);
+}, 60000);
+if (_authSweep.unref) _authSweep.unref();
 
 const { Server } = ssh2;
 // Resolve SFTP protocol constants across ssh2 export shapes.
@@ -79,11 +107,15 @@ function longname(name, stat) {
 
 function start() {
   const hostKey = loadHostKey();
-  const server = new Server({ hostKeys: [hostKey] }, (client) => {
+  const server = new Server({ hostKeys: [hostKey] }, (client, info) => {
     let ctxServer = null;
     let root = null;
+    const ip = (info && info.ip) || (client._sock && client._sock.remoteAddress) || 'unknown';
+    let connFails = 0;
 
     client.on('authentication', (ctx) => {
+      // Temporary lockout after too many failures from this IP.
+      if (authLocked(ip)) return ctx.reject();
       if (ctx.method !== 'password') {
         if (ctx.method === 'none') return ctx.reject(['password']);
         return ctx.reject(['password']);
@@ -93,17 +125,26 @@ function start() {
       const username = dot === -1 ? raw : raw.slice(0, dot);
       const identifier = dot === -1 ? null : raw.slice(dot + 1);
 
+      const fail = () => {
+        authRecordFail(ip);
+        ctx.reject();
+        if (++connFails >= 5) { try { client.end(); } catch {} } // stop hammering on one connection
+      };
+
       const user = db.find(
         'users',
         (u) => u.username.toLowerCase() === username.toLowerCase()
       );
-      if (!user || !auth.checkPassword(user, ctx.password)) return ctx.reject();
+      if (!user || !auth.checkPassword(user, ctx.password)) return fail();
+      // Only approved (or admin) accounts may use SFTP.
+      if (!user.admin && user.status !== 'active') return fail();
 
       let target = identifier
         ? db.find('servers', (s) => s.identifier === identifier || s.uuid === identifier)
         : db.find('servers', (s) => canAccessServer(user, s));
-      if (!target || !canAccessServer(user, target)) return ctx.reject();
+      if (!target || !canAccessServer(user, target)) return fail();
 
+      authClear(ip);
       ctxServer = target;
       root = path.join(config.volumesDir, target.id);
       fs.mkdirSync(root, { recursive: true });
@@ -148,7 +189,11 @@ function bindSftp(sftp, getRoot, getServer) {
     return buf;
   };
   const getHandle = (buf) => handles.get(buf.readUInt32BE(0));
-  const resolve = (p) => safeJoin(getRoot(), p);
+  // Use the shared file-service resolver so SFTP gets the same traversal AND
+  // symlink-escape protection as the web file manager.
+  const resolve = (p) => {
+    try { return files.resolve(getServer(), p); } catch { return null; }
+  };
 
   sftp.on('REALPATH', (reqid, p) => {
     const abs = resolve(p);

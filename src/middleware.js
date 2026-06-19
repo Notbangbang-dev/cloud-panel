@@ -31,13 +31,39 @@ function rateLimit({ windowMs = 60000, max = 10, message = 'Too many attempts â€
   };
 }
 
-/** Conservative security headers (no CSP to avoid breaking the SPA assets). */
+/**
+ * Content-Security-Policy tuned for the SPA:
+ *  - script-src 'self'     -> blocks injected/inline JS (the main XSS goal).
+ *    The frontend loads only external /js/*.js and binds events via
+ *    addEventListener (no inline <script> / on*= handlers), so this is safe.
+ *  - style-src adds 'unsafe-inline' because the UI uses inline styles and an
+ *    injected <style> for live theme preview.
+ *  - img/media allow https: + data: so admin theme backgrounds (remote image /
+ *    gif / video URLs) keep working.
+ *  - connect-src allows same-origin XHR + the console WebSocket.
+ */
+const CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "frame-ancestors 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "media-src 'self' https:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss:",
+].join('; ');
+
+/** Conservative security headers + a strict-but-SPA-compatible CSP. */
 function securityHeaders(req, res, next) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-DNS-Prefetch-Control', 'off');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Content-Security-Policy', CSP);
   next();
 }
 

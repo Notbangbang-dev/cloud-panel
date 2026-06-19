@@ -4,6 +4,27 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] — 2026-06-19
+
+### 🔒 Security hardening
+- **Trust-proxy now defaults OFF** (`CP_TRUST_PROXY`). Trusting `X-Forwarded-For`
+  by default let a directly-reachable panel be brute-forced by spoofing the
+  header to dodge IP rate limits. Set `CP_TRUST_PROXY=1` (hops) behind a proxy.
+- **SFTP brute-force throttling** — SFTP password auth is now rate-limited per
+  source IP (temporary lockout) and abusive connections are dropped; previously
+  only the web login was throttled. SFTP also now requires an **approved**
+  account.
+- **Symlink-escape protection** — the file manager, backups and SFTP now
+  realpath-check paths, so a server process can't drop a symlink in its volume
+  to read/write host files outside it (e.g. the panel's `data/`).
+- **Content-Security-Policy** added on every response (`script-src 'self'`,
+  etc.) to contain XSS; the SPA loads only external JS and binds events without
+  inline handlers, so it stays fully functional.
+- **Password length** unified to **8+** characters (the change-password endpoint
+  previously allowed 6).
+- Added **`SECURITY.md`** with the threat model (host-process isolation caveat)
+  and a deployment hardening checklist.
+
 ## [1.5.0] — 2026-06-18
 
 ### ✨ Added — Console Automations (a Cloud Panel exclusive)

@@ -42,6 +42,18 @@ function int(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Resolve a value safe to pass to Express's `trust proxy` setting.
+ * Defaults to `false` (do not trust client-supplied X-Forwarded-* headers).
+ */
+function resolveTrustProxy(v) {
+  if (v === undefined || v === '' || v === '0' || v === 'false') return false;
+  if (v === 'true') return true; // trust all hops (discouraged)
+  const n = parseInt(v, 10);
+  if (String(n) === String(v).trim()) return n; // number of hops (recommended)
+  return v; // an IP / subnet (or comma-separated list) handed to Express verbatim
+}
+
 const DATA_DIR = process.env.CP_DATA_DIR || path.join(ROOT, 'data');
 
 /**
@@ -81,10 +93,16 @@ const config = {
   //   CP_PUBLIC_HOST=panel.yourdomain.com   or   CP_PUBLIC_HOST=203.0.113.10
   publicHost: process.env.CP_PUBLIC_HOST || '127.0.0.1',
 
-  // Trust X-Forwarded-* headers (so the panel works correctly behind a reverse
-  // proxy / Cloudflare Tunnel and reports https + the real client IP). Set
-  // CP_TRUST_PROXY=0 to disable.
-  trustProxy: process.env.CP_TRUST_PROXY !== '0',
+  // Trust X-Forwarded-* headers. SECURITY: defaults to OFF, because trusting
+  // these headers when the panel is reachable directly lets attackers spoof
+  // X-Forwarded-For to forge req.ip and bypass IP-based rate limiting.
+  // Only enable it when actually behind a trusted proxy / Cloudflare Tunnel:
+  //   CP_TRUST_PROXY=1            -> trust ONE proxy hop (recommended)
+  //   CP_TRUST_PROXY=2            -> trust two hops, etc.
+  //   CP_TRUST_PROXY=10.0.0.0/8   -> trust a specific proxy IP/subnet (list ok)
+  //   CP_TRUST_PROXY=true         -> trust all hops (discouraged)
+  //   CP_TRUST_PROXY=0 / unset    -> do not trust (default)
+  trustProxy: resolveTrustProxy(process.env.CP_TRUST_PROXY),
 
   // ---- Security -----------------------------------------------------------
   // No hard-coded secret: CP_JWT_SECRET if set, else auto-generated & persisted.

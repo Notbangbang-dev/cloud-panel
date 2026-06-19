@@ -464,8 +464,8 @@ router.put('/account/password', (req, res) => {
   const { current, password } = req.body || {};
   if (!auth.checkPassword(req.user, current || ''))
     return res.status(403).json({ error: 'Current password is incorrect' });
-  if (!password || password.length < 6)
-    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  if (!password || password.length < 8)
+    return res.status(400).json({ error: 'New password must be at least 8 characters' });
   db.update('users', req.user.id, { password: auth.hashPassword(password) });
   db.log({ type: 'auth', userId: req.user.id, message: 'Password changed' });
   res.json({ ok: true });
