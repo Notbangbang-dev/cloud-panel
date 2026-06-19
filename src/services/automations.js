@@ -1,0 +1,217 @@
+'use strict';
+
+/**
+ * Console Automations — a feature that (as far as we know) no other game-server
+ * panel ships: reactive rules that watch each server's LIVE console output and,
+ * when a line matches a pattern, automatically perform an action.
+ *
+ *   match (contains | regex)  ->  action (command | power | notify)
+ *
+ * Use cases: auto-restart on "OutOfMemoryError", auto `/save-all` on a keyword,
+ * or instant Discord/webhook alerts the moment a crash/error appears.
+ *
+ * Design notes:
+ *  - Subscribes to processManager's per-server console events (no changes to the
+ *    process manager, no require cycle).
+ *  - Enabled rules are compiled and cached in memory per server, so matching a
+ *    console line never hits the database.
+ *  - Per-rule cooldowns prevent action storms / feedback loops.
+ *  - `notify` webhooks are restricted to https public hosts (SSRF mitigation).
+ */
+
+const db = require('../db');
+const pm = require('./processManager');
+
+const COLL = 'automations';
+const ACTIONS = ['command', 'power', 'notify'];
+const MATCH_TYPES = ['contains', 'regex'];
+const POWER_ACTIONS = ['start', 'stop', 'restart', 'kill'];
+const ANSI_RE = /\u001b\[[0-9;]*m/g;
+
+const subs = new Map();             // serverId -> unsubscribe()
+const compiledByServer = new Map(); // serverId -> [{ rule, test }]
+const lastFired = new Map();        // ruleId -> epoch ms
+
+/* ---- queries ------------------------------------------------------------- */
+const list = (serverId) =>
+  db.filter(COLL, (a) => a.serverId === serverId)
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+const get = (id) => db.get(COLL, id);
+
+/* ---- validation ---------------------------------------------------------- */
+function validRegex(src) { try { new RegExp(src); return true; } catch { return false; } }
+
+/** Block obviously-internal targets so webhooks can't be used for SSRF. */
+function safeWebhook(u) {
+  let url;
+  try { url = new URL(u); } catch { return false; }
+  if (url.protocol !== 'https:') return false;
+  const h = url.hostname.toLowerCase();
+  if (h === 'localhost' || h.endsWith('.localhost')) return false;
+  if (/^(127\.|10\.|0\.|169\.254\.|192\.168\.)/.test(h)) return false;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return false;
+  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return false;
+  return true;
+}
+
+function sanitize(input) {
+  const a = input && typeof input === 'object' ? input : {};
+  const matchType = MATCH_TYPES.includes(a.matchType) ? a.matchType : 'contains';
+  const match = (typeof a.match === 'string' ? a.match : '').slice(0, 500);
+  if (!match.trim()) throw new Error('A match pattern is required.');
+  if (matchType === 'regex' && !validRegex(match)) throw new Error('That is not a valid regular expression.');
+
+  const action = ACTIONS.includes(a.action) ? a.action : 'command';
+  let value = typeof a.value === 'string' ? a.value.trim() : '';
+  if (action === 'power') {
+    if (!POWER_ACTIONS.includes(value)) value = 'restart';
+  } else if (action === 'command') {
+    if (!value) throw new Error('A console command is required.');
+    value = value.slice(0, 500);
+  } else if (action === 'notify') {
+    if (!safeWebhook(value)) throw new Error('Enter an https webhook URL to a public host (e.g. a Discord webhook).');
+  }
+
+  return {
+    name: ((typeof a.name === 'string' && a.name.trim()) || 'Automation').slice(0, 60),
+    enabled: a.enabled === undefined ? true : !!a.enabled,
+    match,
+    matchType,
+    caseSensitive: !!a.caseSensitive,
+    action,
+    value,
+    cooldown: Math.min(86400, Math.max(0, Math.floor(Number(a.cooldown) || 0))),
+  };
+}
+
+/* ---- CRUD ---------------------------------------------------------------- */
+function create(serverId, input) {
+  const clean = sanitize(input);
+  const row = { id: db.uid('auto'), serverId, createdAt: new Date().toISOString(), fireCount: 0, lastFiredAt: null, ...clean };
+  db.insert(COLL, row);
+  refresh(serverId);
+  return row;
+}
+
+function update(id, input) {
+  const cur = db.get(COLL, id);
+  if (!cur) return null;
+  const clean = sanitize({ ...cur, ...input });
+  const row = db.update(COLL, id, clean);
+  refresh(cur.serverId);
+  return row;
+}
+
+function remove(id) {
+  const cur = db.get(COLL, id);
+  if (!cur) return false;
+  const ok = db.remove(COLL, id);
+  lastFired.delete(id);
+  refresh(cur.serverId);
+  return ok;
+}
+
+/* ---- matching ------------------------------------------------------------ */
+function buildTest(rule) {
+  if (rule.matchType === 'regex') {
+    let re;
+    try { re = new RegExp(rule.match, rule.caseSensitive ? '' : 'i'); } catch { return () => false; }
+    return (line) => re.test(line);
+  }
+  const needle = rule.caseSensitive ? rule.match : rule.match.toLowerCase();
+  return (line) => (rule.caseSensitive ? line : line.toLowerCase()).includes(needle);
+}
+
+/** Used by the "test against a sample line" endpoint. Only the match fields
+ *  matter here — the action/value aren't required to preview a match. */
+function testLine(rule, line) {
+  rule = rule && typeof rule === 'object' ? rule : {};
+  const match = typeof rule.match === 'string' ? rule.match : '';
+  if (!match) return false;
+  const matchType = MATCH_TYPES.includes(rule.matchType) ? rule.matchType : 'contains';
+  if (matchType === 'regex' && !validRegex(match)) return false;
+  return buildTest({ match, matchType, caseSensitive: !!rule.caseSensitive })(String(line == null ? '' : line));
+}
+
+/* ---- engine -------------------------------------------------------------- */
+async function runAction(rule, server, line) {
+  if (rule.action === 'command') return pm.command(server.id, rule.value);
+  if (rule.action === 'power') return pm.power(server, rule.value);
+  if (rule.action === 'notify') return notify(rule, server, line);
+  return undefined;
+}
+
+async function notify(rule, server, line) {
+  if (typeof fetch !== 'function') return; // Node < 18 (panel requires 18+)
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    await fetch(rule.value, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: `🔔 **${server.name}** · automation **${rule.name}** matched:\n\`\`\`\n${line.slice(0, 1500)}\n\`\`\``,
+      }),
+      signal: controller.signal,
+    });
+  } catch {
+    /* webhook failures are non-fatal */
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function onConsoleLine(serverId, entry) {
+  if (!entry || entry.stream === 'in') return; // ignore our own injected commands
+  const compiled = compiledByServer.get(serverId);
+  if (!compiled || !compiled.length) return;
+  const line = String(entry.line || '').replace(ANSI_RE, '');
+  if (!line) return;
+
+  const now = Date.now();
+  let server = null;
+  for (const { rule, test } of compiled) {
+    if (!test(line)) continue;
+    const last = lastFired.get(rule.id) || 0;
+    if (rule.cooldown && now - last < rule.cooldown * 1000) continue;
+    lastFired.set(rule.id, now);
+    if (!server) server = db.get('servers', serverId);
+    if (!server) return;
+
+    rule.fireCount = (rule.fireCount || 0) + 1;
+    db.update(COLL, rule.id, { fireCount: rule.fireCount, lastFiredAt: new Date().toISOString() });
+    const detail = rule.action === 'command' ? `: ${rule.value}` : rule.action === 'power' ? `: ${rule.value}` : '';
+    db.log({ type: 'automation', serverId, message: `Automation '${rule.name}' fired → ${rule.action}${detail}` });
+    Promise.resolve(runAction(rule, server, line)).catch(() => {});
+  }
+}
+
+/** (Re)build the in-memory cache + console subscription for a server. */
+function refresh(serverId) {
+  const enabled = list(serverId).filter((r) => r.enabled);
+  if (enabled.length) {
+    compiledByServer.set(serverId, enabled.map((rule) => ({ rule, test: buildTest(rule) })));
+    if (!subs.has(serverId)) {
+      const unsub = pm.subscribe(serverId, (msg) => { if (msg.event === 'console') onConsoleLine(serverId, msg); });
+      subs.set(serverId, unsub);
+    }
+  } else {
+    compiledByServer.delete(serverId);
+    const unsub = subs.get(serverId);
+    if (unsub) { unsub(); subs.delete(serverId); }
+  }
+}
+
+/** Boot-time: start watching every server that already has enabled rules. */
+function init() {
+  const ids = new Set(db.all(COLL).map((a) => a.serverId));
+  for (const id of ids) refresh(id);
+  if (ids.size) console.log(`[automations] watching ${ids.size} server(s) with rules`);
+  return ids.size;
+}
+
+module.exports = {
+  list, get, create, update, remove,
+  sanitize, testLine, init, refresh,
+  ACTIONS, MATCH_TYPES, POWER_ACTIONS,
+};

@@ -9,6 +9,7 @@
     { id: 'console', label: 'Console', icon: 'terminal' },
     { id: 'files', label: 'Files', icon: 'folder' },
     { id: 'backups', label: 'Backups', icon: 'box' },
+    { id: 'automations', label: 'Automations', icon: 'zap' },
     { id: 'network', label: 'Network', icon: 'network' },
     { id: 'startup', label: 'Startup', icon: 'sliders' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
@@ -99,7 +100,7 @@
     function renderTab() {
       S.term = null; S.tiles = null;
       CP.clear(content);
-      const fn = { console: tabConsole, files: tabFiles, backups: tabBackups, network: tabNetwork, startup: tabStartup, settings: tabSettings }[S.activeTab];
+      const fn = { console: tabConsole, files: tabFiles, backups: tabBackups, automations: tabAutomations, network: tabNetwork, startup: tabStartup, settings: tabSettings }[S.activeTab];
       fn(S, content, ctx);
     }
     renderTab();
@@ -422,6 +423,139 @@
         h('button', { class: 'btn sm', html: `${icon('refresh', 14)} Refresh`, onclick: load }),
         h('button', { class: 'btn sm primary', html: `${icon('box', 14)} Create Backup`, onclick: createBackup })),
       quotaNote, wrap
+    );
+    load();
+  }
+
+  /* ============================ AUTOMATIONS ============================ */
+  function tabAutomations(S, root) {
+    const wrap = h('div', { class: 'card', style: { padding: 0, overflow: 'hidden' } });
+
+    const actionLabel = (r) =>
+      r.action === 'command' ? `Run: ${CP.esc(r.value)}` :
+      r.action === 'power' ? `Power: ${r.value}` :
+      'Send alert (webhook)';
+
+    function ruleModal(rule, done) {
+      rule = rule || {};
+      const name = h('input', { value: rule.name || '', placeholder: 'Auto-restart on crash' });
+      const match = h('input', { value: rule.match || '', placeholder: 'OutOfMemoryError' });
+      const matchType = h('select', {}, ...[['contains', 'Contains text'], ['regex', 'Regex']].map(([v, l]) => h('option', { value: v, selected: (rule.matchType || 'contains') === v }, l)));
+      const caseSensitive = h('input', { type: 'checkbox', class: 'switch' }); caseSensitive.checked = !!rule.caseSensitive;
+      const action = h('select', {}, ...[['command', 'Send a console command'], ['power', 'Power action'], ['notify', 'Send a Discord / webhook alert']].map(([v, l]) => h('option', { value: v, selected: (rule.action || 'command') === v }, l)));
+      const valWrap = h('div', {});
+      function renderVal() {
+        CP.clear(valWrap);
+        const a = action.value;
+        if (a === 'power') {
+          const sel = h('select', {}, ...['restart', 'stop', 'start', 'kill'].map((p) => h('option', { value: p, selected: rule.value === p }, p)));
+          valWrap._get = () => sel.value;
+          valWrap.appendChild(h('label', { class: 'field' }, h('span', {}, 'Power action'), sel));
+        } else if (a === 'notify') {
+          const inp = h('input', { value: rule.action === 'notify' ? rule.value || '' : '', placeholder: 'https://discord.com/api/webhooks/…' });
+          valWrap._get = () => inp.value;
+          valWrap.appendChild(h('label', { class: 'field' }, h('span', {}, 'Webhook URL (https)'), inp));
+        } else {
+          const inp = h('input', { value: rule.action === 'command' ? rule.value || '' : '', placeholder: 'say Restarting in 60s…' });
+          valWrap._get = () => inp.value;
+          valWrap.appendChild(h('label', { class: 'field' }, h('span', {}, 'Console command'), inp));
+        }
+      }
+      action.addEventListener('change', renderVal); renderVal();
+
+      const cooldown = h('input', { type: 'number', min: '0', value: rule.cooldown != null ? rule.cooldown : 30 });
+      const enabled = h('input', { type: 'checkbox', class: 'switch' }); enabled.checked = rule.enabled === undefined ? true : !!rule.enabled;
+
+      const testLine = h('input', { placeholder: 'Paste a console line to test…' });
+      const testOut = h('span', { class: 'mono', style: { fontSize: '12px', marginLeft: '8px' } }, '');
+      let tt;
+      testLine.addEventListener('input', () => {
+        clearTimeout(tt);
+        tt = setTimeout(async () => {
+          if (!testLine.value || !match.value) { testOut.textContent = ''; return; }
+          try {
+            const r = await CP.api.testAutomation(S.server.id, { match: match.value, matchType: matchType.value, caseSensitive: caseSensitive.checked }, testLine.value);
+            testOut.textContent = r.data.matched ? '✓ matches' : '✗ no match';
+            testOut.style.color = r.data.matched ? 'var(--green)' : 'var(--faint)';
+          } catch { testOut.textContent = ''; }
+        }, 200);
+      });
+
+      const ref = CP.ui.modal({
+        title: rule.id ? 'Edit automation' : 'New automation', size: 'lg',
+        body: h('div', {},
+          h('label', { class: 'field' }, h('span', {}, 'Name'), name),
+          h('div', { class: 'grid', style: { gridTemplateColumns: '2fr 1fr', gap: '0 16px' } },
+            h('label', { class: 'field' }, h('span', {}, 'When console output matches'), match),
+            h('label', { class: 'field' }, h('span', {}, 'Match type'), matchType)),
+          h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Case sensitive'), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Off = ignore capitalization')), h('div', { style: { marginLeft: 'auto' } }, caseSensitive)),
+          h('label', { class: 'field', style: { marginTop: '10px' } }, h('span', {}, 'Then…'), action),
+          valWrap,
+          h('label', { class: 'field' }, h('span', {}, 'Cooldown (seconds — min time between fires)'), cooldown),
+          h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Enabled')), h('div', { style: { marginLeft: 'auto' } }, enabled)),
+          h('label', { class: 'field', style: { marginTop: '6px' } }, h('span', {}, 'Test against a sample line', testOut), testLine)),
+        footer: [
+          h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+          h('button', { class: 'btn primary', html: `${icon('save', 15)} Save automation`, onclick: async () => {
+            const payload = { name: name.value, match: match.value, matchType: matchType.value, caseSensitive: caseSensitive.checked, action: action.value, value: valWrap._get(), cooldown: +cooldown.value, enabled: enabled.checked };
+            try {
+              if (rule.id) await CP.api.updateAutomation(S.server.id, rule.id, payload);
+              else await CP.api.createAutomation(S.server.id, payload);
+              CP.ui.toast('Automation saved', 'ok'); ref.close(); done();
+            } catch (err) { CP.ui.toast(err.message, 'err'); }
+          } }),
+        ],
+      });
+    }
+
+    async function delRule(r) {
+      if (!(await CP.ui.confirm({ title: 'Delete automation', message: `Delete "${r.name}"?`, confirmText: 'Delete' }))) return;
+      try { await CP.api.deleteAutomation(S.server.id, r.id); CP.ui.toast('Deleted', 'ok'); load(); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+
+    async function load() {
+      CP.clear(wrap); wrap.appendChild(CP.spinner('Loading automations…'));
+      try {
+        const list = (await CP.api.serverAutomations(S.server.id)).data;
+        CP.clear(wrap);
+        if (!list.length) {
+          wrap.appendChild(CP.empty('zap', 'No automations yet — create one to react to console output automatically.'));
+          return;
+        }
+        const tbody = h('tbody');
+        list.forEach((r) => {
+          const toggle = h('input', { type: 'checkbox', class: 'switch' }); toggle.checked = !!r.enabled;
+          toggle.addEventListener('change', async () => {
+            try { await CP.api.updateAutomation(S.server.id, r.id, { enabled: toggle.checked }); CP.ui.toast(toggle.checked ? 'Enabled' : 'Disabled', 'ok'); }
+            catch (e) { toggle.checked = !toggle.checked; CP.ui.toast(e.message, 'err'); }
+          });
+          tbody.appendChild(h('tr', {},
+            h('td', {}, h('b', {}, CP.esc(r.name)), h('div', { class: 'muted', style: { fontSize: '12px' } }, `${r.matchType === 'regex' ? 'regex' : 'contains'}: ${CP.esc(r.match)}`)),
+            h('td', { class: 'muted' }, actionLabel(r)),
+            h('td', { class: 'muted nowrap' }, `${r.cooldown || 0}s`),
+            h('td', { class: 'muted nowrap' }, String(r.fireCount || 0)),
+            h('td', {}, toggle),
+            h('td', {}, h('div', { class: 'row-actions' },
+              h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => ruleModal(r, load) }),
+              h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delRule(r) })))
+          ));
+        });
+        wrap.appendChild(h('table', { class: 'tbl' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Automation'), h('th', {}, 'Action'), h('th', {}, 'Cooldown'), h('th', {}, 'Fired'), h('th', {}, 'On'), h('th', { class: 'right' }, 'Edit'))),
+          tbody));
+      } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
+    }
+
+    root.append(
+      h('div', { class: 'fm-bar' },
+        h('div', { class: 'section-title', style: { margin: 0 } }, 'Console Automations'),
+        h('div', { style: { flex: 1 } }),
+        h('button', { class: 'btn sm', html: `${icon('refresh', 14)} Refresh`, onclick: load }),
+        h('button', { class: 'btn sm primary', html: `${icon('zap', 14)} New Automation`, onclick: () => ruleModal(null, load) })),
+      h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
+        "Watch this server's live console and react automatically — send a command, power-cycle, or fire a Discord/webhook alert when a line matches. Perfect for auto-restart on crashes or instant error alerts."),
+      wrap
     );
     load();
   }

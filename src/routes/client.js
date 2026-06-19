@@ -8,6 +8,7 @@ const files = require('../services/files');
 const settings = require('../services/settings');
 const serversSvc = require('../services/servers');
 const backups = require('../services/backups');
+const automations = require('../services/automations');
 const { canAccessServer, serializeServer, serializeAllocation } = require('./helpers');
 
 const router = express.Router();
@@ -341,6 +342,46 @@ router.delete('/servers/:id/backups/:bid', loadServer, async (req, res) => {
   const removed = await backups.remove(req.server.id, req.params.bid);
   if (!removed) return res.status(404).json({ error: 'Backup not found' });
   res.json({ ok: true });
+});
+
+// ---- Console Automations --------------------------------------------------
+// Reactive rules: when console output matches a pattern, run an action.
+
+router.get('/servers/:id/automations', loadServer, (req, res) => {
+  res.json({ data: automations.list(req.server.id) });
+});
+
+router.post('/servers/:id/automations', loadServer, activeRequired, (req, res) => {
+  try {
+    const rule = automations.create(req.server.id, req.body || {});
+    db.log({ type: 'automation', userId: req.user.id, serverId: req.server.id, message: `Automation '${rule.name}' created` });
+    res.status(201).json({ data: rule });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/servers/:id/automations/:aid', loadServer, (req, res) => {
+  const cur = automations.get(req.params.aid);
+  if (!cur || cur.serverId !== req.server.id) return res.status(404).json({ error: 'Automation not found' });
+  try {
+    res.json({ data: automations.update(req.params.aid, req.body || {}) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/servers/:id/automations/:aid', loadServer, (req, res) => {
+  const cur = automations.get(req.params.aid);
+  if (!cur || cur.serverId !== req.server.id) return res.status(404).json({ error: 'Automation not found' });
+  automations.remove(req.params.aid);
+  res.json({ ok: true });
+});
+
+// Live "does this sample line match?" check for the rule editor.
+router.post('/servers/:id/automations/test', loadServer, (req, res) => {
+  const { rule, line } = req.body || {};
+  res.json({ data: { matched: automations.testLine(rule || {}, line || '') } });
 });
 
 // ---- Network / allocations ------------------------------------------------

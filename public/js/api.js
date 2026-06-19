@@ -57,6 +57,13 @@
     },
     unzip(serverId, path) { return this.post(`/servers/${serverId}/files/unzip`, { path }); },
 
+    /* console automations */
+    serverAutomations(sid) { return this.get(`/servers/${sid}/automations`); },
+    createAutomation(sid, rule) { return this.post(`/servers/${sid}/automations`, rule); },
+    updateAutomation(sid, aid, rule) { return this.put(`/servers/${sid}/automations/${aid}`, rule); },
+    deleteAutomation(sid, aid) { return this.del(`/servers/${sid}/automations/${aid}`); },
+    testAutomation(sid, rule, line) { return this.post(`/servers/${sid}/automations/test`, { rule, line }); },
+
     /* backups */
     backups(serverId) { return this.get(`/servers/${serverId}/backups`); },
     createBackup(serverId, name) { return this.post(`/servers/${serverId}/backups`, { name }); },

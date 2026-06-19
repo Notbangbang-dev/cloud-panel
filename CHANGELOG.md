@@ -4,6 +4,37 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-06-18
+
+### ✨ Added — Console Automations (a Cloud Panel exclusive)
+
+Reactive rules that watch each server's **live console output** and automatically
+take action when a line matches — something other panels (Pterodactyl,
+PufferPanel) don't offer. New **Automations** tab on every server.
+
+- **Match** console output by **contains** text or **regex** (case-sensitive optional).
+- **Act** automatically:
+  - **Command** — send a console command (e.g. `save-all`).
+  - **Power** — start / stop / restart / kill the server.
+  - **Notify** — POST to a Discord / webhook with the matched line.
+- **Per-rule cooldown** prevents action storms and feedback loops.
+- **Enable/disable** toggle, **fire counter**, and a built-in **"test against a
+  sample line"** matcher in the editor.
+- Examples: auto-restart on `OutOfMemoryError`, auto `/save-all` on a keyword,
+  or an instant crash alert to Discord.
+
+### ⚙️ Under the hood
+- New engine (`src/services/automations.js`) subscribes to each server's console
+  stream (no changes to the process manager); enabled rules are compiled and
+  cached in memory, matched with cooldowns, and acted on asynchronously.
+- New endpoints: `GET/POST/PUT/DELETE /api/servers/:id/automations` plus
+  `POST /api/servers/:id/automations/test`.
+- New `automations` collection (migrates automatically on upgrade).
+
+### 🔒 Security
+- `notify` webhooks are restricted to **https** URLs to **public** hosts
+  (loopback/private/link-local ranges are blocked) to mitigate SSRF.
+
 ## [1.4.4] — 2026-06-18
 
 ### 🌐 Website & docs
