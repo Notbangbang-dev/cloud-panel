@@ -61,15 +61,21 @@ async function restore(server, backupId) {
   const src = backupFile(server.id, backupId);
   if (!fs.existsSync(src)) throw new Error('Backup file is missing on disk');
   const zip = new AdmZip(src);
+  const budget = Math.min(files.remainingBytes(server), 8 * 1024 * 1024 * 1024); // quota + anti zip-bomb
   let restored = 0;
+  let written = 0;
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory) continue;
     let target;
     try { target = files.resolve(server, '/' + entry.entryName); } catch { continue; } // zip-slip safe
+    const data = entry.getData();
+    written += data.length;
+    if (written > budget) { files.invalidateDisk(server.id); throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }
     await fsp.mkdir(path.dirname(target), { recursive: true });
-    await fsp.writeFile(target, entry.getData());
+    await fsp.writeFile(target, data);
     restored++;
   }
+  files.invalidateDisk(server.id);
   return { restored };
 }
 

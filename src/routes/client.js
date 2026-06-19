@@ -42,6 +42,13 @@ function activeRequired(req, res, next) {
   return res.status(403).json({ error: 'Your account is awaiting approval before you can do this.' });
 }
 
+// ---- Short-lived scoped tickets (URL-based auth for WS + downloads) -------
+router.post('/tickets', (req, res) => {
+  const scope = (req.body && req.body.scope) || '';
+  if (!['console', 'download'].includes(scope)) return res.status(400).json({ error: 'Invalid ticket scope' });
+  res.json({ ticket: auth.signTicket(req.user, scope) });
+});
+
 // ---- Server listing -------------------------------------------------------
 
 router.get('/servers', (req, res) => {
@@ -332,11 +339,8 @@ router.post('/servers/:id/backups/:bid/restore', loadServer, async (req, res) =>
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-router.get('/servers/:id/backups/:bid/download', loadServer, (req, res) => {
-  const b = backups.get(req.server.id, req.params.bid);
-  if (!b) return res.status(404).json({ error: 'Backup not found' });
-  res.download(backups.backupFile(req.server.id, b.id), `${b.name}.zip`);
-});
+// Backup downloads are handled by the ticket-authed public route (routes/download.js)
+// so the browser can navigate to them without putting a session token in the URL.
 
 router.delete('/servers/:id/backups/:bid', loadServer, async (req, res) => {
   const removed = await backups.remove(req.server.id, req.params.bid);
@@ -466,9 +470,13 @@ router.put('/account/password', (req, res) => {
     return res.status(403).json({ error: 'Current password is incorrect' });
   if (!password || password.length < 8)
     return res.status(400).json({ error: 'New password must be at least 8 characters' });
-  db.update('users', req.user.id, { password: auth.hashPassword(password) });
-  db.log({ type: 'auth', userId: req.user.id, message: 'Password changed' });
-  res.json({ ok: true });
+  // Bumping tokenVersion invalidates every existing session token (revocation).
+  const updated = db.update('users', req.user.id, {
+    password: auth.hashPassword(password),
+    tokenVersion: (req.user.tokenVersion || 0) + 1,
+  });
+  db.log({ type: 'auth', userId: req.user.id, message: 'Password changed (other sessions signed out)' });
+  res.json({ ok: true, token: auth.sign(updated) }); // re-issue so THIS session stays signed in
 });
 
 module.exports = router;

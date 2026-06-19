@@ -168,7 +168,9 @@ router.post('/appearance/preview', (req, res) => {
 });
 
 /** Upload a background asset (image / gif / video) as raw bytes. */
-const UPLOAD_TYPES = { png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', mp4: 'video', webm: 'video', ogg: 'video' };
+// NOTE: SVG is intentionally excluded — SVGs can carry scripts and would be
+// served from our own origin (stored-XSS risk). Use png/jpg/gif/webp instead.
+const UPLOAD_TYPES = { png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', mp4: 'video', webm: 'video', ogg: 'video' };
 router.post('/appearance/upload', express.raw({ type: () => true, limit: '40mb' }), (req, res) => {
   const filename = String(req.query.filename || 'upload');
   const ext = path.extname(filename).toLowerCase().replace('.', '').slice(0, 8);

@@ -96,8 +96,19 @@ function primaryPort(server) {
   return a ? a.port : null;
 }
 
+// SECURITY: a server process must NEVER inherit the panel's own environment —
+// that could contain CP_JWT_SECRET (→ forge admin tokens), DB paths and other
+// secrets. We start from an empty env and pass through only the handful of
+// host vars a child genuinely needs, then add the egg/server's own variables.
+const ENV_PASSTHROUGH = [
+  'PATH', 'Path', 'PATHEXT', 'SystemRoot', 'windir', 'COMSPEC',
+  'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'LANG', 'LC_ALL', 'TZ',
+  'NUMBER_OF_PROCESSORS', 'HOSTNAME',
+];
+
 function buildEnv(server, egg) {
-  const env = { ...process.env };
+  const env = {};
+  for (const k of ENV_PASSTHROUGH) if (process.env[k] !== undefined) env[k] = process.env[k];
   env.SERVER_MEMORY = String(server.limits?.memory ?? 1024);
   env.SERVER_PORT = String(primaryPort(server) ?? '');
   env.SERVER_UUID = server.uuid;
@@ -144,6 +155,7 @@ function ensureStatsLoop() {
 
 const manager = {
   DEMO_PATH,
+  buildEnv, // exported for tests / inspection
 
   getRuntime: rt,
 

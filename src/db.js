@@ -418,6 +418,7 @@ function migrateUsers() {
   for (const u of backend.all('users')) {
     const patch = {};
     if (u.status === undefined) patch.status = 'active';
+    if (u.tokenVersion === undefined) patch.tokenVersion = 0; // for token revocation
     if (u.coins === undefined) patch.coins = d.coins;
     if (!u.resources || typeof u.resources !== 'object')
       patch.resources = { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers, backups: d.backups };

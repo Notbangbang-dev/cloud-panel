@@ -4,6 +4,26 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.2] — 2026-06-19
+
+### 🔒 Security hardening (round 2)
+- **Spawned servers no longer inherit the panel's environment** — a server
+  process gets only a minimal host-var whitelist plus its own egg variables,
+  never `CP_JWT_SECRET` or other panel secrets.
+- **Per-server disk quota is now enforced** on file writes, uploads, zip
+  extraction and backup restores (previously only at creation), with a hard
+  anti-zip-bomb extraction cap.
+- **Revocable sessions** — JWTs carry a `tokenVersion`; changing your password
+  bumps it and signs out all other sessions (your current one is re-issued
+  automatically).
+- **No tokens in URLs** — the session token is accepted only via the
+  `Authorization` header; the WebSocket console and backup downloads now use
+  short-lived (120s), scope-limited **tickets**.
+- **Console WebSocket** requires an approved account and rate-limits
+  command/power messages.
+- **Dropped SVG** from theme uploads (stored-XSS vector) and added an
+  **HSTS** header.
+
 ## [1.5.1] — 2026-06-19
 
 ### 🔒 Security hardening

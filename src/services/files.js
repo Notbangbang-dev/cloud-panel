@@ -54,6 +54,31 @@ function diskUsage(server) {
   return bytes;
 }
 
+/** Drop the cached usage (call after writes so quota checks stay accurate). */
+function invalidateDisk(serverId) { _diskCache.delete(serverId); }
+
+/** A server's disk limit in bytes (0 = unlimited). */
+function limitBytes(server) {
+  const mb = server && server.limits && server.limits.disk;
+  return mb && mb > 0 ? mb * 1024 * 1024 : 0;
+}
+
+/** Bytes still available before hitting the server's disk quota (Infinity = unlimited). */
+function remainingBytes(server) {
+  const limit = limitBytes(server);
+  return limit ? Math.max(0, limit - diskUsage(server)) : Infinity;
+}
+
+/** Throw if adding `addBytes` would exceed the server's disk quota. */
+function assertQuota(server, addBytes) {
+  if (remainingBytes(server) < Math.max(0, addBytes || 0)) {
+    throw Object.assign(new Error('Disk quota exceeded for this server'), { code: 'EDQUOT' });
+  }
+}
+
+// Hard ceiling on a single extraction regardless of quota (anti zip-bomb).
+const MAX_EXTRACT_BYTES = 8 * 1024 * 1024 * 1024;
+
 /**
  * Reject paths that escape the volume via a SYMLINK. Logical containment
  * (string checks) isn't enough: a server process can drop a symlink inside its
@@ -137,8 +162,10 @@ async function read(server, rel) {
 
 async function write(server, rel, content) {
   const abs = resolve(server, rel);
+  assertQuota(server, Buffer.byteLength(content ?? '', 'utf8'));
   await fsp.mkdir(path.dirname(abs), { recursive: true });
   await fsp.writeFile(abs, content ?? '', 'utf8');
+  invalidateDisk(server.id);
   return toRel(server, abs);
 }
 
@@ -170,6 +197,7 @@ function saveStream(server, rel, readable, { maxBytes = MAX_UPLOAD } = {}) {
     let abs;
     try { abs = resolve(server, rel); } catch (e) { return rej(e); }
     if (abs === rootFor(server)) return rej(new Error('Invalid file name'));
+    const cap = Math.min(maxBytes, remainingBytes(server)); // honor the disk quota
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     const ws = fs.createWriteStream(abs);
     let bytes = 0, failed = false;
@@ -180,10 +208,16 @@ function saveStream(server, rel, readable, { maxBytes = MAX_UPLOAD } = {}) {
       fsp.rm(abs, { force: true }).catch(() => {});
       rej(err);
     };
-    readable.on('data', (c) => { bytes += c.length; if (bytes > maxBytes) fail(Object.assign(new Error('File exceeds the 2GB upload limit'), { code: 'TOO_LARGE' })); });
+    readable.on('data', (c) => {
+      bytes += c.length;
+      if (bytes > cap) {
+        const overQuota = cap < maxBytes;
+        fail(Object.assign(new Error(overQuota ? 'Disk quota exceeded for this server' : 'File exceeds the 2GB upload limit'), { code: overQuota ? 'EDQUOT' : 'TOO_LARGE' }));
+      }
+    });
     readable.on('error', fail);
     ws.on('error', fail);
-    ws.on('finish', () => { if (!failed) res(toRel(server, abs)); });
+    ws.on('finish', () => { if (!failed) { invalidateDisk(server.id); res(toRel(server, abs)); } });
     readable.pipe(ws);
   });
 }
@@ -200,16 +234,22 @@ async function unzip(server, rel) {
 
   const baseRel = toRel(server, path.dirname(abs));
   const zip = new AdmZip(abs);
+  const budget = Math.min(remainingBytes(server), MAX_EXTRACT_BYTES); // quota + anti zip-bomb
   let count = 0;
+  let written = 0;
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory) continue;
     const targetRel = (baseRel === '/' ? '' : baseRel) + '/' + entry.entryName;
     let target;
     try { target = resolve(server, targetRel); } catch { continue; } // skip zip-slip entries
+    const data = entry.getData();
+    written += data.length;
+    if (written > budget) { invalidateDisk(server.id); throw Object.assign(new Error('Archive contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }
     await fsp.mkdir(path.dirname(target), { recursive: true });
-    await fsp.writeFile(target, entry.getData());
-    if (++count > 20000) throw new Error('Too many files in archive');
+    await fsp.writeFile(target, data);
+    if (++count > 20000) { invalidateDisk(server.id); throw new Error('Too many files in archive'); }
   }
+  invalidateDisk(server.id);
   return { extracted: count, into: baseRel };
 }
 
@@ -239,4 +279,4 @@ function guessMime(name) {
   return map[ext] || 'application/octet-stream';
 }
 
-module.exports = { rootFor, resolve, toRel, list, read, write, mkdir, rename, remove, diskUsage, saveStream, unzip };
+module.exports = { rootFor, resolve, toRel, list, read, write, mkdir, rename, remove, diskUsage, saveStream, unzip, limitBytes, remainingBytes, assertQuota, invalidateDisk };

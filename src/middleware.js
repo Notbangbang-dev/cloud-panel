@@ -64,6 +64,9 @@ function securityHeaders(req, res, next) {
   res.setHeader('X-DNS-Prefetch-Control', 'off');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   res.setHeader('Content-Security-Policy', CSP);
+  // Enforce HTTPS for a year (ignored by browsers over plain http, so harmless
+  // for local/dev but protective once served over TLS / behind a proxy).
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
 }
 

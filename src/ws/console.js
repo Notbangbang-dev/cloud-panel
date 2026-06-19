@@ -20,8 +20,8 @@ function attach(httpServer) {
       return;
     }
 
-    const payload = query.token && auth.verifyToken(query.token);
-    const user = payload && db.get('users', payload.sub);
+    // Auth via a short-lived, scoped ticket (browsers can't set headers on WS).
+    const user = query.ticket && auth.verifyTicket(query.ticket, 'console');
     if (!user) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
@@ -62,20 +62,29 @@ function handleConnection(ws, user, server) {
 
   const unsubscribe = pm.subscribe(server.id, send);
 
+  // Simple token-bucket so a client can't flood console/power messages.
+  let tokens = 30;
+  const refill = setInterval(() => { tokens = Math.min(30, tokens + 10); }, 1000);
+  if (refill.unref) refill.unref();
+  const allow = () => (tokens > 0 ? (tokens--, true) : false);
+  const isActive = () => user.admin || user.status === 'active';
+
   ws.on('message', async (raw) => {
+    if (raw && raw.length > 8192) return; // ignore oversized frames
     let msg;
     try {
       msg = JSON.parse(raw.toString());
     } catch {
       return;
     }
+    if (msg.type === 'ping') { send({ event: 'pong' }); return; }
+    if (!allow()) { send({ event: 'error', message: 'Slow down — too many actions.' }); return; }
+    if (!isActive()) { send({ event: 'error', message: 'Your account is awaiting approval.' }); return; }
     if (msg.type === 'command' && typeof msg.command === 'string') {
       pm.command(server.id, msg.command);
     } else if (msg.type === 'power' && ['start', 'stop', 'restart', 'kill'].includes(msg.action)) {
       const result = await pm.power(server, msg.action);
       if (!result.ok) send({ event: 'error', message: result.error });
-    } else if (msg.type === 'ping') {
-      send({ event: 'pong' });
     }
   });
 
@@ -85,10 +94,12 @@ function handleConnection(ws, user, server) {
 
   ws.on('close', () => {
     clearInterval(keepAlive);
+    clearInterval(refill);
     unsubscribe();
   });
   ws.on('error', () => {
     clearInterval(keepAlive);
+    clearInterval(refill);
     unsubscribe();
   });
 }

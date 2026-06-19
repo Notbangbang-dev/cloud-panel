@@ -388,7 +388,7 @@
             h('td', { class: 'muted nowrap' }, fmt.rel(b.createdAt)),
             h('td', {}, h('div', { class: 'row-actions' },
               h('button', { class: 'btn sm ghost icon', title: 'Restore', html: icon('restart', 14), onclick: () => restore(b) }),
-              h('a', { class: 'btn sm ghost icon', title: 'Download', href: CP.api.backupDownloadUrl(S.server.id, b.id), target: '_blank', rel: 'noopener', html: icon('save', 14) }),
+              h('button', { class: 'btn sm ghost icon', title: 'Download', html: icon('save', 14), onclick: () => CP.api.downloadBackup(S.server.id, b.id) }),
               h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => del(b) })))
           )));
           wrap.appendChild(h('table', { class: 'tbl' },

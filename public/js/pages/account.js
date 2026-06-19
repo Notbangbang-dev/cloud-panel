@@ -38,9 +38,10 @@
       h('label', { class: 'field' }, h('span', {}, 'New password'), newPass),
       h('button', { class: 'btn primary', html: `${icon('key', 15)} Change password`, onclick: async () => {
         try {
-          await CP.api.put('/account/password', { current: curPass.value, password: newPass.value });
+          const res = await CP.api.put('/account/password', { current: curPass.value, password: newPass.value });
+          if (res && res.token) CP.api.token = res.token; // keep this session; others are revoked
           curPass.value = ''; newPass.value = '';
-          CP.ui.toast('Password changed', 'ok');
+          CP.ui.toast('Password changed — other sessions signed out', 'ok');
         } catch (err) { CP.ui.toast(err.message, 'err'); }
       } })
     );

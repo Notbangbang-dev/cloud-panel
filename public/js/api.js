@@ -69,7 +69,12 @@
     createBackup(serverId, name) { return this.post(`/servers/${serverId}/backups`, { name }); },
     restoreBackup(serverId, bid) { return this.post(`/servers/${serverId}/backups/${bid}/restore`); },
     deleteBackup(serverId, bid) { return this.del(`/servers/${serverId}/backups/${bid}`); },
-    backupDownloadUrl(serverId, bid) { return `/api/servers/${serverId}/backups/${bid}/download?token=${encodeURIComponent(this.token || '')}`; },
+    /* short-lived scoped ticket for URL-based auth (WS console / downloads) */
+    async ticket(scope) { return (await this.post('/tickets', { scope })).ticket; },
+    async downloadBackup(serverId, bid) {
+      const t = await this.ticket('download');
+      window.open(`/api/dl/backups/${encodeURIComponent(serverId)}/${encodeURIComponent(bid)}?ticket=${encodeURIComponent(t)}`, '_blank');
+    },
 
     /* auth */
     login(login, password) { return this.post('/auth/login', { login, password }); },
@@ -123,14 +128,20 @@
       return d.data;
     },
 
-    /* console websocket */
+    /* console websocket — authed with a short-lived 'console' ticket (fetched
+       first), never the session token. Returns a wrapper with close(). */
     consoleSocket(serverId, onMessage) {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(`${proto}://${location.host}/api/servers/${serverId}/ws?token=${encodeURIComponent(this.token)}`);
-      ws.addEventListener('message', (ev) => {
-        try { onMessage(JSON.parse(ev.data)); } catch {}
-      });
-      return ws;
+      let ws = null;
+      let closed = false;
+      this.ticket('console')
+        .then((t) => {
+          if (closed) return;
+          ws = new WebSocket(`${proto}://${location.host}/api/servers/${serverId}/ws?ticket=${encodeURIComponent(t)}`);
+          ws.addEventListener('message', (ev) => { try { onMessage(JSON.parse(ev.data)); } catch {} });
+        })
+        .catch(() => { try { onMessage({ event: 'error', message: 'Could not authorize the console.' }); } catch {} });
+      return { close() { closed = true; if (ws) { try { ws.close(); } catch {} } } };
     },
   };
 

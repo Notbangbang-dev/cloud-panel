@@ -12,6 +12,7 @@ const setupRoutes = require('./routes/setup');
 const clientRoutes = require('./routes/client');
 const adminRoutes = require('./routes/admin');
 const appearanceRoutes = require('./routes/appearance');
+const downloadRoutes = require('./routes/download');
 const appearance = require('./services/appearance');
 const automations = require('./services/automations');
 const consoleWs = require('./ws/console');
@@ -49,6 +50,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/setup', setupRoutes); // public — must be before the authed client router
 app.use('/api', appearanceRoutes); // public theme CSS/JSON — before the authed client router
+app.use('/api', downloadRoutes); // public, ticket-authed downloads — before the authed client router
 app.use('/api', clientRoutes);
 app.use('/api/admin', adminRoutes);
 
