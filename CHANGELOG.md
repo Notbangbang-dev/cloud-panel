@@ -4,7 +4,7 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.4.3] — 2026-06-19
+## [1.4.3] — 2026-06-18
 
 ### 🐛 Fixed
 - **Admin → Users:** the "Pending approval" heading rendered raw `<svg>` markup
@@ -62,8 +62,96 @@ restyle the entire panel — no code, no restarts.
   inside the stylesheet context. Uploads are admin-only and restricted to
   image/gif/video types (≤ 40 MB).
 
+## [1.3.2]
+
+### 📜 Added — Legal
+- **Terms of Service** and **Privacy Policy**, available on the website
+  (`/terms`, `/privacy`) and inside the panel, and linked from the login screen
+  and the site footer.
+- Covers accounts, acceptable use, the coins/economy (virtual items), backups,
+  and how data is handled. No tracking cookies — only your login token is stored
+  locally.
+
+## [1.3.1]
+
+### ⚡ Added — One-command updates
+- `sudo cloud-panel-update` — update to the latest version in one command. Keeps
+  your `.env`, database & backups, reinstalls dependencies, and restarts
+  automatically (no more re-running the installer).
+- Added an **Updating** guide to the website docs.
+
+### 🔧 Changed
+- Safer self-updater (won't break mid-run) that records your repo URL for future
+  pulls.
+- First-time bootstrap: `cd ~/cloud-panel && git pull && sudo bash scripts/update.sh`.
+
+## [1.3.0]
+
+### 💾 Added — Backups
+- New **Backups** tab on every server — snapshot files in one click, then
+  **Restore**, **Download** (`.zip`) or **Delete** any backup.
+- **Backup Slots** added as a purchasable **Shop** item (default 1 slot/user).
+
+### 🛠️ Admin
+- Configure default backups, the backup shop price/amount, and per-user backup
+  quotas in **Admin → Settings**.
+
+### 🔒 Security
+- Backups and restores stay locked inside each server's own files.
+
+## [1.2.0]
+
+### 📁 Added — File uploads
+- Upload one or many files at once, or whole **folders** (full structure
+  recreated).
+- **Drag & drop** onto the file manager, with a live streamed progress bar (up
+  to 2 GB per file).
+- **Zip support** — upload a `.zip` and **Extract** it in place.
+
+### 🔒 Security
+- Safe extraction blocks "zip-slip" path escapes; all uploads and extractions
+  stay inside the server's own files.
+
+## [1.1.0]
+
+### 🌙 Added — AFK rewards
+- New **AFK** page — earn coins just by keeping it open (default **+1 coin /
+  30s**) with a live countdown ring. Fully server-timed, so it can't be cheated
+  by spamming or scripts.
+- **Anti-abuse:** only one AFK page can earn at a time — extra tabs are blocked,
+  and you can't earn while no page is open.
+
+### ⚙️ Admin
+- Set the AFK rate & interval, or toggle the page on/off, in **Admin → Settings**.
+- Coin balance now updates live in the sidebar.
+
+### 🐛 Fixed
+- Squashed a settings bug and general stability tweaks.
+
 ## [1.0.0]
 
-- Initial release: Pterodactyl/PufferPanel-style game-server management — servers,
-  users, nodes, locations, allocations, eggs, console, SFTP, backups, economy/shop
-  and AFK rewards.
+### 🎉 Initial release
+A full game-server panel **plus** a Discord bot.
+
+**Panel**
+- Real-time console and live CPU / RAM / disk stats.
+- One-click servers: Paper, Purpur, Folia, Fabric, Vanilla, Velocity, Waterfall
+  (plus Node.js, Python and generic Java).
+- Built-in file manager + per-server SFTP.
+- Multi-node admin: nodes, locations, allocations & eggs.
+
+**Economy & self-service**
+- Coins + shop (buy RAM, CPU, Disk & server slots), per-user resource quotas,
+  and members deploying their own servers within their limits.
+
+**Accounts**
+- Public sign-ups with admin approval, a first-run setup wizard (no default
+  passwords), and admin-editable defaults, prices & feature toggles.
+
+**Discord bot**
+- 26 slash commands; moderation (ban, kick, timeout, lock, slowmode, warns);
+  ticket system with HTML transcripts; welcome/leave messages + autorole.
+
+**Behind the scenes**
+- SQLite database, JWT auth, rate limiting & security headers.
+- One-command VPS installer (Node, Java, systemd, firewall).
