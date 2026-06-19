@@ -4,6 +4,19 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.4] — 2026-06-18
+
+### 🌐 Website & docs
+- Reworded the install messaging so it no longer implies Cloud Panel gives you a
+  free VPS — it's now clear the one-command installer runs on **your own** VPS
+  ("One-command install").
+- Updated the "How is this site hosted?" answer: the marketing site now runs on
+  **Vercel** (previously a self-hosted Node server behind a Cloudflare Tunnel).
+- The website source is now open at
+  [`Notbangbang-dev/cloud-panel-web`](https://github.com/Notbangbang-dev/cloud-panel-web).
+
+> Website/docs only — the panel application itself is unchanged from 1.4.3.
+
 ## [1.4.3] — 2026-06-18
 
 ### 🐛 Fixed
