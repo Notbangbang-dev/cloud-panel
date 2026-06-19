@@ -223,11 +223,30 @@
     if (u.status === 'declined') return h('span', { class: 'badge', style: { background: 'rgba(248,113,113,.16)', color: '#f87171' } }, 'Declined');
     return h('span', { class: 'badge green' }, 'Active');
   }
-  async function giveCoins(u, done) {
-    const v = await CP.ui.prompt({ title: `Coins for ${u.username}`, label: 'Amount to add (use a negative number to remove)', value: '100' });
-    if (v === null) return;
-    try { await CP.api.adminCoins(u.id, Math.floor(Number(v) || 0)); CP.ui.toast('Coins updated', 'ok'); done(); }
-    catch (e) { CP.ui.toast(e.message, 'err'); }
+  function adjustCoins(u, done) {
+    const amount = h('input', { type: 'number', min: '0', value: '100' });
+    async function apply(sign) {
+      const n = Math.floor(Number(amount.value) || 0);
+      if (n <= 0) { CP.ui.toast('Enter a positive amount', 'err'); return; }
+      try {
+        await CP.api.adminCoins(u.id, sign * n);
+        CP.ui.toast(`${sign < 0 ? 'Removed' : 'Added'} ${n.toLocaleString()} coins`, 'ok');
+        ref.close(); done();
+      } catch (e) { CP.ui.toast(e.message, 'err'); }
+    }
+    const ref = CP.ui.modal({
+      title: `Coins · ${u.username}`,
+      body: h('div', {},
+        h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
+          `Current balance: ${(u.coins || 0).toLocaleString()} coins`),
+        h('label', { class: 'field' }, h('span', {}, 'Amount'), amount)),
+      footer: [
+        h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+        h('button', { class: 'btn red', html: `${icon('trash', 14)} Remove`, onclick: () => apply(-1) }),
+        h('button', { class: 'btn green', html: `${icon('plus', 14)} Add`, onclick: () => apply(1) }),
+      ],
+    });
+    setTimeout(() => amount.focus(), 50);
   }
 
   async function users(root) {
@@ -252,7 +271,7 @@
             h('button', { class: 'btn sm red', html: `${icon('x', 14)} Decline`, onclick: async () => { try { await CP.api.adminDecline(u.id); CP.ui.toast(`Declined ${u.username}`, 'info'); reload(); } catch (e) { CP.ui.toast(e.message, 'err'); } } })))
         )));
         pendingHolder.append(
-          h('div', { class: 'section-title', style: { marginTop: 0 } }, `${icon('clock', 13)} Pending approval (${pending.length})`),
+          h('div', { class: 'section-title', style: { marginTop: 0 }, html: `${icon('clock', 13)} Pending approval (${pending.length})` }),
           tableCard(h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'User'), h('th', {}, 'Email'), h('th', {}, 'Requested'), h('th', { class: 'right' }, 'Actions'))), pb)),
           h('div', { class: 'section-title' }, 'All users')
         );
@@ -269,7 +288,7 @@
         h('td', { class: 'mono' }, CP.app.economyEnabled ? (u.coins || 0).toLocaleString() : '—'),
         h('td', { class: 'muted nowrap', style: { fontSize: '12px' } }, u.resources ? `${u.resources.memory}MB · ${u.resources.cpu}% · ${u.resources.servers} slot(s)` : '—'),
         h('td', {}, h('div', { class: 'row-actions' },
-          CP.app.economyEnabled ? h('button', { class: 'btn sm ghost icon', title: 'Give coins', html: icon('coin', 14), onclick: () => giveCoins(u, reload) }) : null,
+          CP.app.economyEnabled ? h('button', { class: 'btn sm ghost icon', title: 'Add / remove coins', html: icon('coin', 14), onclick: () => adjustCoins(u, reload) }) : null,
           h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => editUser(u, reload) }),
           h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delUser(u, reload) })))
       )));

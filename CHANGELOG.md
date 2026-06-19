@@ -4,6 +4,19 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] — 2026-06-19
+
+### 🐛 Fixed
+- **Admin → Users:** the "Pending approval" heading rendered raw `<svg>` markup
+  instead of the clock icon. It now displays correctly (icon is passed as HTML,
+  not text).
+
+### ✨ Added
+- **Admin → Users:** a dedicated **Add / Remove coins** dialog on each user —
+  shows the current balance, an amount field, and **Add** / **Remove** buttons.
+  Removing coins no longer requires typing a negative number (balances still
+  floor at 0).
+
 ## [1.1.0] — 2026-06-18
 
 ### ✨ Added — Appearance & Theming (admin console)
