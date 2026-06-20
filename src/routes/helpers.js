@@ -4,10 +4,54 @@ const db = require('../db');
 const pm = require('../services/processManager');
 const files = require('../services/files');
 
+/**
+ * Granular per-server permissions for subusers. Owners and admins implicitly
+ * hold every permission; invited subusers hold a subset chosen by the owner.
+ */
+const PERMISSIONS = [
+  'control.console',  // view the live console + resource stats
+  'control.command',  // send console commands
+  'control.power',    // start / stop / restart / kill
+  'file',             // browse, edit, upload & delete files
+  'backup',           // create / restore / download / delete backups
+  'automation',       // manage console automations
+  'schedule',         // manage scheduled (cron) tasks
+  'database',         // manage per-server databases
+  'player',           // view the live player list, kick & ban
+  'startup',          // edit startup variables
+  'allocation',       // view network / SFTP details
+  'settings',         // rename / status page
+  'activity',         // view the server activity log
+];
+
+function subuserFor(user, server) {
+  if (!user || !server) return null;
+  return db.find('subusers', (s) => s.serverId === server.id && s.userId === user.id) || null;
+}
+
+/** True for the server owner or any administrator. */
+function isOwner(user, server) {
+  return !!(user && server && (user.admin || server.ownerId === user.id));
+}
+
 function canAccessServer(user, server) {
-  if (!server) return false;
+  if (!server || !user) return false;
   if (user.admin) return true;
-  return server.ownerId === user.id;
+  if (server.ownerId === user.id) return true;
+  return !!subuserFor(user, server);
+}
+
+/** The set of permissions `user` holds on `server`. */
+function serverPermissions(user, server) {
+  if (isOwner(user, server)) return new Set(PERMISSIONS);
+  const su = subuserFor(user, server);
+  if (!su) return new Set();
+  return new Set(Array.isArray(su.permissions) ? su.permissions.filter((p) => PERMISSIONS.includes(p)) : []);
+}
+
+function hasPermission(user, server, perm) {
+  if (isOwner(user, server)) return true;
+  return serverPermissions(user, server).has(perm);
 }
 
 function serializeAllocation(a) {
@@ -22,7 +66,7 @@ function serializeAllocation(a) {
   };
 }
 
-function serializeServer(server, { detail = false } = {}) {
+function serializeServer(server, { detail = false, user = null } = {}) {
   const node = db.get('nodes', server.nodeId);
   const egg = db.get('eggs', server.eggId);
   const owner = db.get('users', server.ownerId);
@@ -53,6 +97,15 @@ function serializeServer(server, { detail = false } = {}) {
     resources,
     createdAt: server.createdAt,
   };
+
+  // When a viewer is supplied, tell the UI whether they're the owner/admin and
+  // exactly which permissions they hold (so it can hide tabs/actions).
+  if (user) {
+    base.access = {
+      owner: isOwner(user, server),
+      permissions: [...serverPermissions(user, server)],
+    };
+  }
 
   if (!detail) return base;
 
@@ -92,4 +145,7 @@ function serializeNode(node) {
   };
 }
 
-module.exports = { canAccessServer, serializeServer, serializeAllocation, serializeNode };
+module.exports = {
+  canAccessServer, serializeServer, serializeAllocation, serializeNode,
+  serverPermissions, hasPermission, isOwner, subuserFor, PERMISSIONS,
+};

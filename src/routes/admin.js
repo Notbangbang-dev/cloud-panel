@@ -12,6 +12,10 @@ const users = require('../services/users');
 const settings = require('../services/settings');
 const appearance = require('../services/appearance');
 const backups = require('../services/backups');
+const subusers = require('../services/subusers');
+const schedules = require('../services/schedules');
+const databases = require('../services/databases');
+const metrics = require('../services/metrics');
 const pkg = require('../../package.json');
 const { serializeServer, serializeNode } = require('./helpers');
 
@@ -312,6 +316,34 @@ router.get('/eggs', (req, res) => {
   res.json({ data: db.all('eggs') });
 });
 
+// ---- Database hosts (for per-server databases) ----------------------------
+
+router.get('/database-hosts', (req, res) => {
+  res.json({ data: databases.hosts().map(databases.publicHost), driver: databases.driverAvailable() });
+});
+
+router.post('/database-hosts', (req, res) => {
+  try { res.status(201).json({ data: databases.addHost(req.body || {}) }); }
+  catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.put('/database-hosts/:id', (req, res) => {
+  try { res.json({ data: databases.updateHost(req.params.id, req.body || {}) }); }
+  catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/database-hosts/:id', (req, res) => {
+  try { databases.removeHost(req.params.id); res.json({ ok: true }); }
+  catch (err) { res.status(409).json({ error: err.message }); }
+});
+
+router.post('/database-hosts/:id/test', async (req, res) => {
+  const host = databases.hostById(req.params.id);
+  if (!host) return res.status(404).json({ error: 'Host not found' });
+  try { res.json({ data: await databases.testHost(host) }); }
+  catch (err) { res.status(502).json({ error: err.message }); }
+});
+
 // ---- Servers (admin CRUD) -------------------------------------------------
 
 router.get('/servers', (req, res) => {
@@ -366,6 +398,7 @@ router.post('/servers', (req, res) => {
   db.log({ type: 'admin', userId: req.user.id, message: `Created server ${server.name}` });
   // Auto-provision real server files when the egg has an installer (Paper/Vanilla).
   pm.provision(server, { trigger: 'install' }).catch(() => {});
+  try { require('../services/players').watch(server.id); } catch {}
   res.status(201).json({ data: serializeServer(server, { detail: true }) });
 });
 
@@ -391,6 +424,10 @@ router.delete('/servers/:id', async (req, res) => {
     if (db.get('allocations', id)) db.update('allocations', id, { serverId: null, primary: false });
   });
   await backups.removeAllForServer(server.id);
+  subusers.removeAllForServer(server.id);
+  schedules.removeAllForServer(server.id);
+  try { await databases.removeAllForServer(server.id); } catch {}
+  metrics.removeForServer(server.id);
   db.remove('servers', server.id);
   db.log({ type: 'admin', userId: req.user.id, message: `Deleted server ${server.name}` });
   res.json({ ok: true });

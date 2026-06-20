@@ -82,6 +82,7 @@ function createServer({ name, ownerId, eggId, nodeId, allocationId, memory, cpu,
 
   db.update('allocations', alloc.id, { serverId: server.id, primary: true });
   pm.provision(server, { trigger: 'install' }).catch(() => {});
+  try { require('./players').watch(server.id); } catch {}
   return server;
 }
 

@@ -76,6 +76,57 @@
       window.open(`/api/dl/backups/${encodeURIComponent(serverId)}/${encodeURIComponent(bid)}?ticket=${encodeURIComponent(t)}`, '_blank');
     },
 
+    /* subusers */
+    serverSubusers(sid) { return this.get(`/servers/${sid}/subusers`); },
+    addSubuser(sid, identifier, permissions) { return this.post(`/servers/${sid}/subusers`, { identifier, permissions }); },
+    updateSubuser(sid, suid, permissions) { return this.put(`/servers/${sid}/subusers/${suid}`, { permissions }); },
+    deleteSubuser(sid, suid) { return this.del(`/servers/${sid}/subusers/${suid}`); },
+
+    /* scheduled tasks (cron) */
+    schedules(sid) { return this.get(`/servers/${sid}/schedules`); },
+    createSchedule(sid, body) { return this.post(`/servers/${sid}/schedules`, body); },
+    updateSchedule(sid, scid, body) { return this.put(`/servers/${sid}/schedules/${scid}`, body); },
+    deleteSchedule(sid, scid) { return this.del(`/servers/${sid}/schedules/${scid}`); },
+
+    /* per-server databases */
+    databases(sid) { return this.get(`/servers/${sid}/databases`); },
+    createDatabase(sid, body) { return this.post(`/servers/${sid}/databases`, body); },
+    rotateDatabase(sid, dbid) { return this.post(`/servers/${sid}/databases/${dbid}/rotate`); },
+    deleteDatabase(sid, dbid) { return this.del(`/servers/${sid}/databases/${dbid}`); },
+
+    /* plugin / mod browser (Modrinth) */
+    pluginSearch(sid, q, version) { return this.get(`/servers/${sid}/plugins/search?q=${encodeURIComponent(q || '')}${version ? `&version=${encodeURIComponent(version)}` : ''}`); },
+    pluginVersions(sid, project, version) { return this.get(`/servers/${sid}/plugins/versions/${encodeURIComponent(project)}${version ? `?version=${encodeURIComponent(version)}` : ''}`); },
+    pluginInstalled(sid) { return this.get(`/servers/${sid}/plugins/installed`); },
+    pluginInstall(sid, projectId, versionId) { return this.post(`/servers/${sid}/plugins/install`, { projectId, versionId }); },
+
+    /* live player list */
+    players(sid) { return this.get(`/servers/${sid}/players`); },
+    playersRefresh(sid) { return this.post(`/servers/${sid}/players/refresh`); },
+    kickPlayer(sid, name, reason) { return this.post(`/servers/${sid}/players/${encodeURIComponent(name)}/kick`, { reason }); },
+    banPlayer(sid, name, reason) { return this.post(`/servers/${sid}/players/${encodeURIComponent(name)}/ban`, { reason }); },
+
+    /* historical metrics */
+    serverMetrics(sid, range) { return this.get(`/servers/${sid}/metrics?range=${range || 86400}`); },
+
+    /* public status page (config) */
+    statusPageConfig(sid) { return this.get(`/servers/${sid}/statuspage`); },
+    saveStatusPage(sid, body) { return this.put(`/servers/${sid}/statuspage`, body); },
+
+    /* two-factor authentication */
+    twoFactor() { return this.get('/account/2fa'); },
+    twoFactorSetup() { return this.post('/account/2fa/setup'); },
+    twoFactorEnable(token) { return this.post('/account/2fa/enable', { token }); },
+    twoFactorDisable(password) { return this.post('/account/2fa/disable', { password }); },
+    login2fa(ticket, token) { return this.post('/auth/2fa', { ticket, token }); },
+
+    /* admin: database hosts */
+    adminDatabaseHosts() { return this.get('/admin/database-hosts'); },
+    adminAddDatabaseHost(body) { return this.post('/admin/database-hosts', body); },
+    adminUpdateDatabaseHost(id, body) { return this.put(`/admin/database-hosts/${id}`, body); },
+    adminDeleteDatabaseHost(id) { return this.del(`/admin/database-hosts/${id}`); },
+    adminTestDatabaseHost(id) { return this.post(`/admin/database-hosts/${id}/test`); },
+
     /* auth */
     login(login, password) { return this.post('/auth/login', { login, password }); },
     me() { return this.get('/auth/me'); },

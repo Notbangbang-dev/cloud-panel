@@ -36,10 +36,26 @@ const num = (v, min = 0) => Math.max(min, Math.floor(Number(v) || 0));
 /** Apply a (partial) settings patch with whitelisting + coercion. */
 function update(patch = {}) {
   const cur = JSON.parse(JSON.stringify(get()));
-  const allowed = ['economy', 'registration', 'defaults', 'limits', 'shop', 'afk'];
+  const allowed = ['economy', 'registration', 'defaults', 'limits', 'shop', 'afk', 'security'];
   const clean = {};
   for (const k of allowed) if (patch[k] !== undefined) clean[k] = patch[k];
   deepMerge(cur, clean);
+
+  // Database hosts (array of { id, name, host, port, username, password,
+  // phpMyAdminUrl }) are replaced wholesale + coerced. Managed via the
+  // dedicated Admin → Databases endpoints (not the generic settings form).
+  if (patch.databaseHosts !== undefined && Array.isArray(patch.databaseHosts)) {
+    const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+    cur.databaseHosts = patch.databaseHosts.map((h) => ({
+      id: str(h.id, 64) || ('dbhost_' + Math.random().toString(16).slice(2, 10)),
+      name: str(h.name, 60) || 'Database Host',
+      host: str(h.host, 200),
+      port: Math.min(65535, Math.max(1, parseInt(h.port, 10) || 3306)),
+      username: str(h.username, 64) || 'root',
+      password: typeof h.password === 'string' ? h.password : '',
+      phpMyAdminUrl: str(h.phpMyAdminUrl, 300),
+    }));
+  }
 
   // Appearance is replaced wholesale (the editor always sends a full document)
   // and fully validated/normalized by its own engine.
@@ -60,6 +76,8 @@ function update(patch = {}) {
     };
   }
 
+  if (!cur.security) cur.security = {};
+  cur.security.force2faAdmins = !!cur.security.force2faAdmins;
   cur.economy.enabled = !!cur.economy.enabled;
   cur.registration.enabled = !!cur.registration.enabled;
   cur.registration.requireApproval = !!cur.registration.requireApproval;

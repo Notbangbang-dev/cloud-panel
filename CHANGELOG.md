@@ -4,6 +4,71 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] — 2026-06-20
+
+### 🚀 Added — the biggest feature drop yet (10 major features)
+
+**👥 Subusers / per-server sharing**
+- Invite other Cloud Panel accounts to a server with **granular permissions**
+  (console, send-commands, power, files, backups, schedules, databases, players,
+  startup, network, settings, activity).
+- Permissions are enforced everywhere — REST routes **and** the console
+  WebSocket — and the UI hides tabs/actions a subuser can't use. Owners and
+  admins always hold every permission. New **Subusers** tab (owner-only).
+
+**⏰ Scheduled tasks (cron)**
+- A new **Schedules** tab: run a console command, power action, or **backup** on
+  a standard 5-field cron expression (with quick presets). Daily restarts,
+  nightly backups, timed announcements. Shows next/last run; “only when online”.
+
+**🔐 Two-factor authentication (TOTP)**
+- Authenticator-app 2FA (Google Authenticator, Authy, 1Password…), wiring up the
+  previously-dead `twoFactor` field. Self-contained TOTP + an in-house QR-code
+  generator (no dependencies), one-time **recovery codes**, and a second-step
+  login challenge. The TOTP secret never leaves the server.
+
+**🗄️ Per-server databases**
+- `featureLimits.databases` now does something: provision real **MySQL/MariaDB**
+  databases per server (create, rotate password, delete) against admin-managed
+  **database hosts** (Admin → Databases, with a connection **Test**). Uses the
+  optional `mysql2` driver.
+
+**🎮 Plugin / mod browser (Modrinth)**
+- Search Modrinth and **one-click install** plugins/mods straight into the
+  server's `plugins/` or `mods/` folder (auto-detected from the egg). New
+  **Mods** tab with installed-file listing.
+
+**📦 One-click Modrinth modpack egg**
+- New **Minecraft: Modpack (Modrinth)** egg: enter a pack slug/URL and Cloud
+  Panel downloads the `.mrpack`, installs every mod + override, **and** the
+  matching Fabric/Quilt/Forge/NeoForge loader, then sets the startup.
+
+**🟢 Live player list**
+- New **Players** tab: who's online (parsed live from the console), with
+  one-click **kick/ban**. Works for Java; best-effort for Bedrock/PocketMine.
+
+**🥚 More auto-install eggs (19 → 27)**
+- **Quilt**, **Pufferfish**, **Leaf** (Minecraft: Java), **PocketMine-MP**
+  (Bedrock), and **SteamCMD** games — **Rust**, **Valheim**, **Counter-Strike 2**
+  via a new SteamCMD installer type.
+
+**📈 Historical metrics**
+- CPU / memory / disk and uptime are recorded every minute and kept per server,
+  powering a new **Metrics** tab with real graphs (1h/6h/24h/7d) plus
+  uptime-%, peak CPU and peak RAM. (Live sparklines still stream on Console.)
+
+**🌐 Public status page**
+- Opt-in, shareable **read-only** page per server at `/status/<slug>` — live
+  status, player count, address and (optionally) uptime-% and resources. No
+  login required. Configure it in the server's **Settings** tab.
+
+### 🔧 Notes
+- New collections (`subusers`, `schedules`, `databases`) and per-user/-server
+  fields are added automatically on upgrade; all migrations are additive.
+- Per-server databases need the optional **`mysql2`** package (`npm install`)
+  and at least one database host configured in **Admin → Databases**.
+- SteamCMD eggs require `steamcmd` on the host (Linux); PocketMine requires PHP.
+
 ## [1.8.1] — 2026-06-20
 
 ### ✨ Changed — Forge, NeoForge & Sponge now auto-install

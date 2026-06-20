@@ -135,6 +135,27 @@ After that, every user (with sudo) can run `sudo cloud-panel-update` anytime.
   an egg (template) catalog, plus a live capacity overview.
 - **JWT auth** + bcrypt password hashing + one-command VPS install.
 
+### Teams, automation & game power-ups (v1.9)
+
+- **Subusers** — share a server with other accounts using **granular
+  permissions** (console, power, files, backups, schedules, databases, players,
+  …), enforced on both REST and the console WebSocket.
+- **Scheduled tasks (cron)** — timed restarts, nightly backups and commands on a
+  standard 5-field schedule.
+- **Two-factor auth (TOTP)** — authenticator-app 2FA with QR enrollment and
+  one-time recovery codes; the secret never leaves the server.
+- **Per-server databases** — provision real **MySQL/MariaDB** databases against
+  admin-managed hosts (needs the optional `mysql2` driver).
+- **Plugin/mod browser** — search **Modrinth** and one-click install into
+  `plugins/`/`mods/`; plus a one-click **Modrinth modpack** egg.
+- **Live player list** — see who's online (parsed from the console) and
+  kick/ban with one click.
+- **More eggs (27 total)** — Quilt, Pufferfish, Leaf, PocketMine-MP, and
+  **SteamCMD** games (Rust, Valheim, CS2).
+- **Historical metrics** — per-minute CPU/RAM/disk + uptime graphs (1h–7d).
+- **Public status pages** — a shareable, login-free status page per server at
+  `/status/<slug>`.
+
 ---
 
 ## Configuration

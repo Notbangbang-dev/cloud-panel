@@ -42,8 +42,42 @@ router.post('/login', loginLimiter, (req, res) => {
   if (user.status === 'declined')
     return res.status(403).json({ error: 'Your account request was declined.' });
 
+  // If the account has 2FA enabled, the password is only step one — issue a
+  // short-lived, single-purpose ticket and ask for the authenticator code.
+  if (user.totp && user.totp.enabled) {
+    return res.json({ twoFactorRequired: true, ticket: auth.signTicket(user, '2fa', 300) });
+  }
+
   db.log({ type: 'auth', userId: user.id, message: `${user.username} signed in` });
   res.json({ token: auth.sign(user), user: auth.publicUser(user) });
+});
+
+/** Second factor: exchange a 2FA ticket + TOTP code (or recovery code) for a session. */
+const twoFaLimiter = rateLimit({ windowMs: 60000, max: 10, message: 'Too many codes — wait a minute and try again.' });
+router.post('/2fa', twoFaLimiter, (req, res) => {
+  const { ticket, token } = req.body || {};
+  const user = ticket && auth.verifyTicket(ticket, '2fa');
+  if (!user) return res.status(401).json({ error: 'Your sign-in request expired — please log in again.' });
+  if (!user.totp || !user.totp.enabled) return res.status(400).json({ error: 'Two-factor is not enabled on this account.' });
+
+  const totp = require('../services/totp');
+  const code = String(token || '');
+  let ok = totp.verify(user.totp.secret, code);
+  if (!ok) {
+    // Allow a one-time recovery code (consumed on use).
+    const hash = totp.hashCode(code);
+    const remaining = (user.totp.backupCodes || []).filter((h) => h !== hash);
+    if (remaining.length !== (user.totp.backupCodes || []).length) {
+      ok = true;
+      db.update('users', user.id, { totp: { ...user.totp, backupCodes: remaining } });
+      db.log({ type: 'auth', userId: user.id, message: 'Signed in with a 2FA recovery code' });
+    }
+  }
+  if (!ok) return res.status(401).json({ error: 'Invalid authentication code.' });
+
+  const fresh = db.get('users', user.id);
+  db.log({ type: 'auth', userId: user.id, message: `${user.username} signed in (2FA)` });
+  res.json({ token: auth.sign(fresh), user: auth.publicUser(fresh) });
 });
 
 /** Public self-service registration (if enabled). */

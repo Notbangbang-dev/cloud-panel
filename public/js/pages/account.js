@@ -57,7 +57,11 @@
       )
     );
 
-    root.appendChild(h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } }, profile, emailCard, passCard));
+    /* Two-factor authentication */
+    const twofaCard = h('div', { class: 'card' }, CP.spinner('Loading 2FA…'));
+    buildTwoFactor(twofaCard);
+
+    root.appendChild(h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } }, profile, emailCard, passCard, twofaCard));
 
     /* Activity */
     root.appendChild(h('div', { class: 'section-title' }, 'Recent Activity'));
@@ -78,4 +82,81 @@
       CP.clear(actWrap); actWrap.appendChild(CP.empty('alert', err.message));
     }
   };
+
+  async function buildTwoFactor(card) {
+    let info;
+    try { info = (await CP.api.twoFactor()).data; }
+    catch (err) { CP.clear(card); card.appendChild(CP.empty('alert', err.message)); return; }
+    CP.clear(card);
+    card.appendChild(h('h3', { html: `${icon('lock', 16)} Two-Factor Authentication` }));
+
+    if (info.enabled) {
+      card.append(
+        h('p', { class: 'muted', style: { fontSize: '13px', margin: '8px 0 12px' } },
+          `Enabled — you'll be asked for a code from your authenticator app when signing in. ${info.backupCodesRemaining} recovery code(s) left.`),
+        h('span', { class: 'badge green', style: { marginBottom: '14px', display: 'inline-block' } }, 'Active'),
+        h('div', {}, h('button', { class: 'btn red', html: `${icon('lock', 15)} Disable 2FA`, onclick: () => disableFlow(card) }))
+      );
+      return;
+    }
+    card.append(
+      h('p', { class: 'muted', style: { fontSize: '13px', margin: '8px 0 14px' } },
+        'Add a second step at sign-in using an authenticator app (Google Authenticator, Authy, 1Password…).'),
+      h('button', { class: 'btn primary', html: `${icon('shield', 15)} Enable two-factor`, onclick: () => enrollFlow(card) })
+    );
+  }
+
+  async function enrollFlow(card) {
+    let setup;
+    try { setup = (await CP.api.twoFactorSetup()).data; }
+    catch (err) { return CP.ui.toast(err.message, 'err'); }
+
+    const svg = CP.qrSvg ? CP.qrSvg(setup.otpauth, 200) : null;
+    const qrBox = svg
+      ? h('div', { style: { background: '#fff', padding: '10px', borderRadius: '12px', width: 'max-content', margin: '0 auto' }, html: svg })
+      : h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Enter the key below into your authenticator app.');
+    const code = h('input', { placeholder: '6-digit code', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6' });
+
+    const ref = CP.ui.modal({
+      title: 'Set up two-factor', size: 'lg',
+      body: h('div', {},
+        h('p', { class: 'muted', style: { fontSize: '13px', marginTop: 0 } }, 'Scan the QR code, or enter the key manually, then type the 6-digit code to confirm.'),
+        qrBox,
+        h('div', { style: { margin: '14px 0' } },
+          h('div', { class: 'muted', style: { fontSize: '12px', marginBottom: '4px' } }, 'Manual entry key'),
+          h('span', { class: 'copy', html: `<span class="mono">${CP.esc(setup.secret)}</span> ${icon('copy', 13)}`, onclick: () => CP.copy(setup.secret) })),
+        h('label', { class: 'field' }, h('span', {}, 'Confirmation code'), code)),
+      footer: [
+        h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+        h('button', { class: 'btn primary', html: `${icon('check', 15)} Verify & enable`, onclick: async () => {
+          try {
+            const r = (await CP.api.twoFactorEnable(code.value.trim())).data;
+            if (CP.app.user) CP.app.user.twoFactorEnabled = true;
+            showBackupCodes(ref, r.backupCodes || [], card);
+          } catch (err) { CP.ui.toast(err.message, 'err'); }
+        } }),
+      ],
+    });
+    setTimeout(() => code.focus(), 60);
+  }
+
+  function showBackupCodes(ref, codes, card) {
+    const list = h('div', { class: 'mono', style: { columns: '2', fontSize: '14px', lineHeight: '2', margin: '8px 0' } },
+      ...codes.map((c) => h('div', {}, c)));
+    CP.clear(ref.modal.querySelector('.modal-body')).append(
+      h('p', {}, h('b', {}, 'Two-factor is now enabled. ')),
+      h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Save these one-time recovery codes somewhere safe — each lets you sign in once if you lose your device. They won\'t be shown again.'),
+      list,
+      h('button', { class: 'btn', html: `${icon('copy', 14)} Copy all`, onclick: () => CP.copy(codes.join('\n'), 'Recovery codes copied') })
+    );
+    const foot = ref.modal.querySelector('.modal-foot');
+    if (foot) CP.clear(foot).appendChild(h('button', { class: 'btn primary', onclick: () => { ref.close(); buildTwoFactor(card); } }, 'Done'));
+  }
+
+  async function disableFlow(card) {
+    const pw = await CP.ui.prompt({ title: 'Disable two-factor', label: 'Confirm with your current password', confirmText: 'Disable' });
+    if (pw === null) return;
+    try { await CP.api.twoFactorDisable(pw); if (CP.app.user) CP.app.user.twoFactorEnabled = false; CP.ui.toast('Two-factor disabled', 'ok'); buildTwoFactor(card); }
+    catch (err) { CP.ui.toast(err.message, 'err'); }
+  }
 })();

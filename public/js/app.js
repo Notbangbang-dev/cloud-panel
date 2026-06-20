@@ -93,6 +93,7 @@
       if (head === 'afk') return { route: 'afk', params: {} };
       if (head === 'terms') return { route: 'terms', params: {} };
       if (head === 'privacy') return { route: 'privacy', params: {} };
+      if (head === 'status') return { route: 'status', params: { slug: rest[0] } };
       if (head === 'login') return { route: 'login', params: {} };
       return { route: 'dashboard', params: {} };
     },
@@ -102,10 +103,11 @@
       const appRoot = document.getElementById('app');
       const r = this.parse();
 
-      // Legal pages are public (work signed-in or out, no shell).
-      if ((r.route === 'terms' || r.route === 'privacy') && CP.pages[r.route]) {
+      // Public pages — legal + status pages (work signed-in or out, no shell).
+      if ((r.route === 'terms' || r.route === 'privacy' || r.route === 'status') && CP.pages[r.route]) {
         this.shell = null;
-        CP.pages[r.route](appRoot);
+        const ctx = { params: r.params, onCleanup: (fn) => this._cleanups.push(fn) };
+        CP.pages[r.route](appRoot, ctx);
         return;
       }
 

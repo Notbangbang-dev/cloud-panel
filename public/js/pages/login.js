@@ -70,11 +70,41 @@
       error.textContent = ''; btn.disabled = true; btn.textContent = 'Signing in…';
       try {
         const res = await CP.api.login(loginInput.value.trim(), passInput.value);
+        if (res.twoFactorRequired) { renderTwoFactor(res.ticket); return; }
         await adoptSession(res);
         CP.ui.toast(`Welcome back, ${CP.app.user.firstName || CP.app.user.username}`, 'ok');
         CP.app.go('/');
       } catch (err) {
         error.textContent = err.message; btn.disabled = false; btn.textContent = 'Sign in';
+      }
+    }
+
+    function renderTwoFactor(ticket) {
+      card.onsubmit = (e) => { e.preventDefault(); verify(); };
+      CP.clear(card);
+      const error = h('div', { class: 'auth-error' });
+      const codeInput = h('input', { placeholder: '6-digit code or recovery code', autocomplete: 'one-time-code', inputmode: 'numeric' });
+      const btn = h('button', { class: 'btn primary block', type: 'submit' }, 'Verify');
+      card.append(
+        brand(),
+        h('p', { class: 'sub' }, 'Two-factor authentication — enter the code from your authenticator app.'),
+        error,
+        h('label', { class: 'field' }, h('span', {}, 'Authentication code'), codeInput),
+        btn,
+        h('div', { class: 'hint' }, h('a', { class: 'auth-link', onclick: renderLogin }, 'Back to sign in'))
+      );
+      setTimeout(() => codeInput.focus(), 60);
+
+      async function verify() {
+        error.textContent = ''; btn.disabled = true; btn.textContent = 'Verifying…';
+        try {
+          const res = await CP.api.login2fa(ticket, codeInput.value.trim());
+          await adoptSession(res);
+          CP.ui.toast(`Welcome back, ${CP.app.user.firstName || CP.app.user.username}`, 'ok');
+          CP.app.go('/');
+        } catch (err) {
+          error.textContent = err.message; btn.disabled = false; btn.textContent = 'Verify';
+        }
       }
     }
 

@@ -30,6 +30,31 @@ function runJava(args, cwd, log) {
   });
 }
 
+/** Run SteamCMD (tries `steamcmd`, then `steamcmd.sh`) for SteamCMD-based games. */
+function runSteam(args, cwd, log) {
+  const candidates = process.platform === 'win32' ? ['steamcmd.exe', 'steamcmd'] : ['steamcmd', 'steamcmd.sh'];
+  return new Promise((resolve, reject) => {
+    let idx = 0;
+    const attempt = () => {
+      const bin = candidates[idx];
+      let proc;
+      try { proc = spawn(bin, args, { cwd, windowsHide: true }); }
+      catch (e) { return next(e); }
+      let spawnFailed = false;
+      const pipe = (buf) => String(buf).split(/\r?\n/).forEach((l) => l.trim() && log('  ' + l.trim()));
+      proc.stdout.on('data', pipe);
+      proc.stderr.on('data', pipe);
+      proc.on('error', (e) => { spawnFailed = true; next(e); });
+      proc.on('close', (code) => { if (spawnFailed) return; code === 0 ? resolve() : reject(new Error('SteamCMD exited with code ' + code)); });
+    };
+    const next = (e) => {
+      if (++idx < candidates.length) return attempt();
+      reject(new Error('SteamCMD is required for this game and was not found on the host. Install steamcmd and try again. (' + e.message + ')'));
+    };
+    attempt();
+  });
+}
+
 async function fetchJson(url) {
   const res = await fetch(url, { headers: { 'User-Agent': 'CloudPanel/1.0' } });
   if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
@@ -65,8 +90,8 @@ function defaultProperties(dir, motd) {
 }
 
 /* ---- PaperMC family (paper / folia / velocity / waterfall) -------------- */
-async function paperProject(project, { dir, vars, log }) {
-  const API = `https://api.papermc.io/v2/projects/${project}`;
+async function paperProject(project, { dir, vars, log }, baseUrl = 'https://api.papermc.io/v2/projects') {
+  const API = `${baseUrl}/${project}`;
   log(`Resolving ${project} version…`);
   const proj = await fetchJson(API);
   let version = vars.MINECRAFT_VERSION || vars.VERSION;
@@ -256,7 +281,164 @@ async function sponge({ dir, vars, log }) {
   log(`SpongeVanilla ${version} installation complete.`);
 }
 
-const INSTALLERS = { paper, folia, purpur, vanilla, fabric, velocity, waterfall, bungeecord, geyser, forge, neoforge, sponge };
+/* ---- Quilt (downloads + RUNS the official installer) -------------------- */
+async function quilt({ dir, vars, log }) {
+  const META = 'https://meta.quiltmc.org/v3';
+  log('Resolving Quilt versions…');
+  let game = vars.MINECRAFT_VERSION;
+  if (!game || game === 'latest') {
+    const games = await fetchJson(`${META}/versions/game`);
+    game = (games.find((g) => g.stable) || games[0]).version;
+  }
+  const installers = await fetchJson(`${META}/versions/installer`);
+  const installer = installers[0] && installers[0].version;
+  if (!installer) throw new Error('Could not resolve a Quilt installer version.');
+  log(`Downloading Quilt installer ${installer}…`);
+  await download(`https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/${installer}/quilt-installer-${installer}.jar`, path.join(dir, 'quilt-installer.jar'), log);
+  const args = ['-jar', 'quilt-installer.jar', 'install', 'server', game, '--download-server', '--install-dir=.'];
+  if (vars.LOADER_VERSION && vars.LOADER_VERSION !== 'latest') args.push(vars.LOADER_VERSION);
+  log(`Installing Quilt server for Minecraft ${game}…`);
+  await runJava(args, dir, log);
+  acceptEula(dir, log);
+  defaultProperties(dir, 'A Cloud Panel Quilt Server');
+  try { fs.rmSync(path.join(dir, 'quilt-installer.jar'), { force: true }); } catch {}
+  log(`Quilt installation complete (Minecraft ${game}).`);
+  return { startup: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar quilt-server-launch.jar nogui' };
+}
+
+/* ---- Pufferfish (Jenkins CI) -------------------------------------------- */
+async function pufferfish({ dir, vars, log }) {
+  const CI = 'https://ci.pufferfish.host';
+  log('Resolving Pufferfish build…');
+  const root = await fetchJson(`${CI}/api/json?tree=jobs[name]`);
+  const jobs = (root.jobs || []).map((j) => j.name).filter((n) => /^Pufferfish-\d+\.\d+$/.test(n));
+  if (!jobs.length) throw new Error('Could not list Pufferfish builds.');
+  let job;
+  const mc = vars.MINECRAFT_VERSION;
+  if (mc && mc !== 'latest') {
+    const mm = mc.split('.').slice(0, 2).join('.');
+    job = jobs.find((n) => n === `Pufferfish-${mm}`);
+    if (!job) throw new Error(`No Pufferfish build for Minecraft ${mc}.`);
+  } else {
+    job = jobs.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop();
+  }
+  const build = await fetchJson(`${CI}/job/${job}/lastSuccessfulBuild/api/json?tree=artifacts[fileName,relativePath]`);
+  const art = (build.artifacts || []).find((a) => /\.jar$/i.test(a.fileName));
+  if (!art) throw new Error('No Pufferfish jar artifact found.');
+  log(`Downloading ${job} (${art.fileName})…`);
+  await download(`${CI}/job/${job}/lastSuccessfulBuild/artifact/${art.relativePath}`, path.join(dir, 'server.jar'), log);
+  acceptEula(dir, log);
+  defaultProperties(dir, 'A Cloud Panel Pufferfish Server');
+  log('Pufferfish installation complete.');
+}
+
+/* ---- Leaf (PaperMC-style API) ------------------------------------------- */
+async function leaf(ctx) {
+  const v = await paperProject('leaf', ctx, 'https://api.leafmc.one/v2/projects');
+  acceptEula(ctx.dir, ctx.log);
+  defaultProperties(ctx.dir, 'A Cloud Panel Leaf Server');
+  ctx.log(`Leaf ${v} installation complete.`);
+}
+
+/* ---- PocketMine-MP (Bedrock; direct phar) ------------------------------- */
+async function pocketmine({ dir, log }) {
+  log('Downloading the latest PocketMine-MP.phar…');
+  await download('https://github.com/pmmp/PocketMine-MP/releases/latest/download/PocketMine-MP.phar', path.join(dir, 'PocketMine-MP.phar'), log);
+  log('PocketMine-MP installed. It generates its config on first start (PHP must be available on the host).');
+}
+
+/* ---- SteamCMD games (Rust / Valheim / CS2 / …) -------------------------- */
+async function steamcmd({ dir, vars, log }) {
+  const appId = String(vars.STEAM_APP_ID || '').replace(/[^0-9]/g, '');
+  if (!appId) throw new Error('A Steam App ID (STEAM_APP_ID) is required for SteamCMD installs.');
+  log(`Installing Steam app ${appId} via SteamCMD (this can take a while)…`);
+  await runSteam(['+force_install_dir', dir, '+login', 'anonymous', '+app_update', appId, 'validate', '+quit'], dir, log);
+  log(`SteamCMD install of app ${appId} complete.`);
+}
+
+/* ---- Modrinth modpack (.mrpack one-click) ------------------------------- */
+function safeJoin(dir, rel) {
+  const clean = path.normalize(rel || '').replace(/^([/\\]|\.\.([/\\]|$))+/, '');
+  const abs = path.resolve(dir, clean);
+  if (abs !== dir && !abs.startsWith(dir + path.sep)) throw new Error('Unsafe path in modpack: ' + rel);
+  return abs;
+}
+
+async function modpack({ dir, vars, log }) {
+  let AdmZip;
+  try { AdmZip = require('adm-zip'); }
+  catch { throw new Error('Modpack installs need the adm-zip package — run "npm install".'); }
+  const modrinth = require('./modrinth');
+
+  log(`Resolving Modrinth modpack "${vars.MODPACK}"…`);
+  const { slug, version, mrpack } = await modrinth.resolveModpackVersion(vars.MODPACK, vars.MODPACK_VERSION);
+  log(`Selected ${slug} ${version.version_number}.`);
+  const packPath = path.join(dir, 'pack.mrpack');
+  await download(mrpack.url, packPath, log);
+
+  const zip = new AdmZip(packPath);
+  const indexEntry = zip.getEntry('modrinth.index.json');
+  if (!indexEntry) throw new Error('Invalid .mrpack: modrinth.index.json missing.');
+  const index = JSON.parse(indexEntry.getData().toString('utf8'));
+  const deps = index.dependencies || {};
+  const mc = deps.minecraft;
+
+  // 1) Download every server-relevant file listed in the index.
+  const fileList = (index.files || []).filter((f) => !f.env || f.env.server !== 'unsupported');
+  log(`Downloading ${fileList.length} mod file(s)…`);
+  let done = 0;
+  for (const f of fileList) {
+    const url = (f.downloads || [])[0];
+    if (!url) continue;
+    const dest = safeJoin(dir, f.path);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    await download(url, dest, () => {});
+    if (++done % 10 === 0 || done === fileList.length) log(`  …${done}/${fileList.length} files`);
+  }
+
+  // 2) Apply overrides + server-overrides on top of the install dir.
+  for (const entry of zip.getEntries()) {
+    const name = entry.entryName.replace(/\\/g, '/');
+    let rel = null;
+    if (name.startsWith('overrides/')) rel = name.slice('overrides/'.length);
+    else if (name.startsWith('server-overrides/')) rel = name.slice('server-overrides/'.length);
+    if (rel == null || !rel || entry.isDirectory) continue;
+    const dest = safeJoin(dir, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, entry.getData());
+  }
+  log('Applied modpack overrides.');
+  try { fs.rmSync(packPath, { force: true }); } catch {}
+
+  // 3) Install the matching loader server + return its startup command.
+  let startup;
+  if (deps['fabric-loader']) {
+    log('Installing Fabric loader for the modpack…');
+    await fabric({ dir, vars: { MINECRAFT_VERSION: mc, LOADER_VERSION: deps['fabric-loader'] }, log });
+    startup = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar nogui';
+  } else if (deps['quilt-loader']) {
+    const r = await quilt({ dir, vars: { MINECRAFT_VERSION: mc, LOADER_VERSION: deps['quilt-loader'] }, log });
+    startup = r.startup;
+  } else if (deps['forge']) {
+    const r = await forge({ dir, vars: { MINECRAFT_VERSION: mc, FORGE_VERSION: deps['forge'] }, log });
+    startup = r.startup;
+  } else if (deps['neoforge']) {
+    const r = await neoforge({ dir, vars: { NEOFORGE_VERSION: deps['neoforge'] }, log });
+    startup = r.startup;
+  } else {
+    log('No mod loader in the modpack — installing vanilla.');
+    await vanilla({ dir, vars: { MINECRAFT_VERSION: mc }, log });
+    startup = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar nogui';
+  }
+  acceptEula(dir, log);
+  log(`Modpack "${index.name || slug}" installed for Minecraft ${mc}.`);
+  return { startup };
+}
+
+const INSTALLERS = {
+  paper, folia, purpur, vanilla, fabric, velocity, waterfall, bungeecord, geyser, forge, neoforge, sponge,
+  quilt, pufferfish, leaf, pocketmine, steamcmd, modpack,
+};
 
 module.exports = {
   has: (name) => Boolean(INSTALLERS[name]),

@@ -52,7 +52,9 @@ function verifyState(token) {
 
 function publicUser(user) {
   if (!user) return null;
-  const { password, ...rest } = user;
+  // Never expose the password hash or the raw TOTP secret / recovery codes.
+  const { password, totp, ...rest } = user;
+  rest.twoFactorEnabled = !!((totp && totp.enabled) || user.twoFactor);
   return rest;
 }
 

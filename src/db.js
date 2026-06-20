@@ -16,7 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 
-const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings', 'backups', 'automations'];
+const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings', 'backups', 'automations', 'subusers', 'schedules', 'databases'];
 
 /** Global, admin-editable settings (economy, registration, defaults, shop). */
 const SETTINGS_DEFAULTS = {
@@ -47,6 +47,12 @@ const SETTINGS_DEFAULTS = {
   oauth: {
     discord: { enabled: false, clientId: '', clientSecret: '', redirectUri: '', createAccounts: true },
   },
+  // Per-server database hosts (MySQL / MariaDB). Admins add hosts in
+  // Admin → Databases; servers then provision real databases against them.
+  // Each host: { id, name, host, port, username, password, phpMyAdminUrl }.
+  databaseHosts: [],
+  // Security — two-factor authentication policy.
+  security: { force2faAdmins: false },
 };
 
 function uid(prefix) {
@@ -238,6 +244,7 @@ const db = {
     ensureEggs(); // idempotently add any newly-shipped egg templates
     ensureSettings(); // economy / registration / defaults / shop
     migrateUsers(); // backfill status/coins/resources on existing users
+    migrateServers(); // backfill featureLimits + status-page config
     return db;
   },
 
@@ -275,6 +282,8 @@ const db = {
 const MC_DOCKER = 'eclipse-temurin:21-jre';
 const MC_START = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar nogui';
 const PROXY_START = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar';
+const PHP_DOCKER = 'php:8.2-cli';
+const STEAM_DOCKER = 'cm2network/steamcmd:latest';
 
 function eggCatalog() {
   return [
@@ -425,6 +434,65 @@ function eggCatalog() {
       docker: 'ubuntu:22.04', startup: './{{SERVER_BINARY}}', stopCommand: 'exit',
       variables: [{ name: 'Server binary', env: 'SERVER_BINARY', default: 'TerrariaServer.bin.x86_64', userEditable: true }],
     },
+    {
+      name: 'Minecraft: Quilt', category: 'Minecraft: Java', installer: 'quilt',
+      description: 'Quilt modded server — a Fabric-compatible toolchain. Resolves the latest game/loader from the Quilt meta API and downloads a ready-to-run server launcher.',
+      docker: MC_DOCKER, startup: MC_START, stopCommand: 'stop',
+      variables: [
+        { name: 'Minecraft Version', env: 'MINECRAFT_VERSION', default: 'latest', userEditable: true },
+        { name: 'Loader Version', env: 'LOADER_VERSION', default: 'latest', userEditable: true },
+      ],
+    },
+    {
+      name: 'Minecraft: Pufferfish', category: 'Minecraft: Java', installer: 'pufferfish',
+      description: 'Pufferfish — a highly-optimized Paper fork for big servers. Downloads the latest build for the chosen version and accepts the EULA.',
+      docker: MC_DOCKER, startup: MC_START, stopCommand: 'stop',
+      variables: [{ name: 'Minecraft Version', env: 'MINECRAFT_VERSION', default: 'latest', userEditable: true }],
+    },
+    {
+      name: 'Minecraft: Leaf', category: 'Minecraft: Java', installer: 'leaf',
+      description: 'Leaf — a performance-focused Paper fork. Downloads the latest Leaf build via its PaperMC-style API and accepts the EULA.',
+      docker: MC_DOCKER, startup: MC_START, stopCommand: 'stop',
+      variables: [{ name: 'Minecraft Version', env: 'MINECRAFT_VERSION', default: 'latest', userEditable: true }],
+    },
+    {
+      name: 'Minecraft: Modpack (Modrinth)', category: 'Minecraft: Modpacks', installer: 'modpack',
+      description: 'One-click Modrinth modpack. Enter a modpack (slug or URL) and Cloud Panel downloads the .mrpack, installs every mod + override and the matching Fabric/Quilt/Forge/NeoForge loader, then sets the startup automatically.',
+      docker: MC_DOCKER, startup: MC_START, stopCommand: 'stop',
+      variables: [
+        { name: 'Modpack (slug or URL)', env: 'MODPACK', default: 'fabulously-optimized', userEditable: true },
+        { name: 'Version (or "latest")', env: 'MODPACK_VERSION', default: 'latest', userEditable: true },
+      ],
+    },
+    {
+      name: 'PocketMine-MP (Bedrock)', category: 'Minecraft: Bedrock', installer: 'pocketmine',
+      description: 'PocketMine-MP — a plugin-friendly Minecraft: Bedrock server written in PHP. Downloads the latest PocketMine-MP.phar; runs on the bundled PHP. (Linux host.)',
+      docker: PHP_DOCKER, startup: 'php PocketMine-MP.phar --no-wizard', stopCommand: 'stop',
+      variables: [],
+    },
+    {
+      name: 'Rust', category: 'SteamCMD Games', installer: 'steamcmd',
+      description: 'Rust dedicated server, installed via SteamCMD (app 258550). Requires a Linux host with steamcmd available. First install can be large.',
+      docker: STEAM_DOCKER, startup: './RustDedicated -batchmode -nographics +server.port {{SERVER_PORT}} +server.identity cloud', stopCommand: '^C',
+      variables: [{ name: 'Steam App ID', env: 'STEAM_APP_ID', default: '258550', userEditable: false }],
+    },
+    {
+      name: 'Valheim', category: 'SteamCMD Games', installer: 'steamcmd',
+      description: 'Valheim dedicated server, installed via SteamCMD (app 896660). Requires a Linux host with steamcmd available.',
+      docker: STEAM_DOCKER, startup: './valheim_server.x86_64 -nographics -batchmode -name "{{SERVER_NAME}}" -port {{SERVER_PORT}} -world "{{WORLD_NAME}}" -password "{{SERVER_PASSWORD}}" -public 1', stopCommand: '^C',
+      variables: [
+        { name: 'Steam App ID', env: 'STEAM_APP_ID', default: '896660', userEditable: false },
+        { name: 'Server name', env: 'SERVER_NAME', default: 'Cloud Panel Valheim', userEditable: true },
+        { name: 'World name', env: 'WORLD_NAME', default: 'Dedicated', userEditable: true },
+        { name: 'Password (min 5 chars)', env: 'SERVER_PASSWORD', default: 'cloudpanel', userEditable: true },
+      ],
+    },
+    {
+      name: 'Counter-Strike 2', category: 'SteamCMD Games', installer: 'steamcmd',
+      description: 'Counter-Strike 2 dedicated server, installed via SteamCMD (app 730). Requires a Linux host with steamcmd. Set a GSLT token in server.cfg for public listing.',
+      docker: STEAM_DOCKER, startup: './game/bin/linuxsteamrt64/cs2 -dedicated -port {{SERVER_PORT}} +map de_dust2', stopCommand: '^C',
+      variables: [{ name: 'Steam App ID', env: 'STEAM_APP_ID', default: '730', userEditable: false }],
+    },
   ];
 }
 
@@ -476,12 +544,30 @@ function migrateUsers() {
     if (u.status === undefined) patch.status = 'active';
     if (u.tokenVersion === undefined) patch.tokenVersion = 0; // for token revocation
     if (u.discordId === undefined) patch.discordId = null; // Discord OAuth link
+    // Two-factor (TOTP). `totp` holds the secret + recovery codes; `twoFactor`
+    // mirrors the enabled flag for backward-compatible reads.
+    if (u.totp === undefined) patch.totp = { enabled: !!u.twoFactor, secret: null, backupCodes: [] };
+    if (u.twoFactor === undefined) patch.twoFactor = false;
     if (u.coins === undefined) patch.coins = d.coins;
     if (!u.resources || typeof u.resources !== 'object')
       patch.resources = { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers, backups: d.backups };
     else if (u.resources.backups === undefined)
       patch.resources = { ...u.resources, backups: d.backups }; // backfill new backups quota
     if (Object.keys(patch).length) backend.update('users', u.id, patch);
+  }
+}
+
+/** Backfill feature limits + public status-page config on existing servers. */
+function migrateServers() {
+  for (const s of backend.all('servers')) {
+    const patch = {};
+    if (!s.featureLimits || typeof s.featureLimits !== 'object')
+      patch.featureLimits = { databases: 5, backups: 5, allocations: 5 };
+    else if (s.featureLimits.databases === undefined)
+      patch.featureLimits = { ...s.featureLimits, databases: 5 };
+    if (s.statusPage === undefined)
+      patch.statusPage = { enabled: false, slug: null, showPlayers: true, showResources: false };
+    if (Object.keys(patch).length) backend.update('servers', s.id, patch);
   }
 }
 

@@ -5,7 +5,7 @@ const url = require('url');
 const db = require('../db');
 const auth = require('../auth');
 const pm = require('../services/processManager');
-const { canAccessServer } = require('../routes/helpers');
+const { canAccessServer, hasPermission } = require('../routes/helpers');
 
 const WS_PATH = /^\/api\/servers\/([^/]+)\/ws$/;
 
@@ -32,7 +32,9 @@ function attach(httpServer) {
     const server =
       db.get('servers', id) ||
       db.find('servers', (s) => s.identifier === id || s.uuid === id);
-    if (!server || !canAccessServer(user, server)) {
+    // Viewing the console requires the 'control.console' permission (owners and
+    // admins always have it; subusers only if it was granted).
+    if (!server || !canAccessServer(user, server) || !hasPermission(user, server, 'control.console')) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
@@ -81,8 +83,10 @@ function handleConnection(ws, user, server) {
     if (!allow()) { send({ event: 'error', message: 'Slow down — too many actions.' }); return; }
     if (!isActive()) { send({ event: 'error', message: 'Your account is awaiting approval.' }); return; }
     if (msg.type === 'command' && typeof msg.command === 'string') {
+      if (!hasPermission(user, server, 'control.command')) { send({ event: 'error', message: 'You do not have permission to send commands.' }); return; }
       pm.command(server.id, msg.command);
     } else if (msg.type === 'power' && ['start', 'stop', 'restart', 'kill'].includes(msg.action)) {
+      if (!hasPermission(user, server, 'control.power')) { send({ event: 'error', message: 'You do not have permission to control power.' }); return; }
       const result = await pm.power(server, msg.action);
       if (!result.ok) send({ event: 'error', message: result.error });
     }

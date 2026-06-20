@@ -13,8 +13,12 @@ const clientRoutes = require('./routes/client');
 const adminRoutes = require('./routes/admin');
 const appearanceRoutes = require('./routes/appearance');
 const downloadRoutes = require('./routes/download');
+const statusRoutes = require('./routes/status');
 const appearance = require('./services/appearance');
 const automations = require('./services/automations');
+const schedules = require('./services/schedules');
+const players = require('./services/players');
+const metrics = require('./services/metrics');
 const isolation = require('./services/isolation');
 const consoleWs = require('./ws/console');
 const sftp = require('./sftp/sftpServer');
@@ -23,6 +27,9 @@ const { securityHeaders } = require('./middleware');
 db.load();
 isolation.init(); // optional: lock panel internals + enable per-server-user isolation
 automations.init(); // start watching consoles for servers that have rules
+schedules.init(); // start the cron scheduler for time-based tasks
+players.init(); // track live player rosters from console output
+metrics.init(); // record CPU/RAM/disk/uptime history for graphs + status pages
 
 const app = express();
 app.disable('x-powered-by');
@@ -53,6 +60,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/setup', setupRoutes); // public — must be before the authed client router
 app.use('/api', appearanceRoutes); // public theme CSS/JSON — before the authed client router
 app.use('/api', downloadRoutes); // public, ticket-authed downloads — before the authed client router
+app.use('/api', statusRoutes); // public, read-only status pages — before the authed client router
 app.use('/api', clientRoutes);
 app.use('/api/admin', adminRoutes);
 
@@ -113,6 +121,7 @@ function shutdown() {
   shuttingDown = true;
   console.log('\n[cloud-panel] shutting down — stopping servers...');
   pm.shutdownAll();
+  try { metrics.flush(); } catch {}
   db.persistNow();
   httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();

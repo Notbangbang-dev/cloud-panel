@@ -13,6 +13,7 @@
     { id: 'locations', label: 'Locations', icon: 'pin' },
     { id: 'allocations', label: 'Allocations', icon: 'network' },
     { id: 'eggs', label: 'Eggs', icon: 'box' },
+    { id: 'databases', label: 'Databases', icon: 'drive' },
     { id: 'settings', label: 'Settings', icon: 'sliders' },
     { id: 'appearance', label: 'Appearance', icon: 'palette' },
     { id: 'login', label: 'Login', icon: 'key' },
@@ -47,7 +48,7 @@
     function render() {
       removeAppearancePreview(); // leaving a tab discards an unsaved theme preview
       CP.clear(content);
-      ({ overview, servers, users, nodes, locations, allocations, eggs, settings, appearance: appearanceTab, login: loginTab }[active])(content);
+      ({ overview, servers, users, nodes, locations, allocations, eggs, databases: databasesTab, settings, appearance: appearanceTab, login: loginTab }[active])(content);
     }
     render();
   };
@@ -389,6 +390,7 @@
     const econEnabled = sw(s.economy.enabled);
     const regEnabled = sw(s.registration.enabled);
     const regApproval = sw(s.registration.requireApproval);
+    const force2fa = sw(s.security && s.security.force2faAdmins);
     const dCoins = numIn(s.defaults.coins), dMem = numIn(s.defaults.memory), dCpu = numIn(s.defaults.cpu), dDisk = numIn(s.defaults.disk), dServers = numIn(s.defaults.servers), dBackups = numIn(s.defaults.backups);
     const minMem = numIn(s.limits.minMemory), minCpu = numIn(s.limits.minCpu), minDisk = numIn(s.limits.minDisk);
     const shop = {};
@@ -416,6 +418,7 @@
           backups: { price: +shop.backups.price.value, amount: +shop.backups.amount.value },
         },
         afk: { enabled: afkOn.checked, coins: +afkCoins.value, intervalSeconds: +afkInterval.value },
+        security: { force2faAdmins: force2fa.checked },
       };
       try { await CP.api.adminUpdateSettings(patch); CP.app.economyEnabled = patch.economy.enabled; CP.app.afkEnabled = patch.economy.enabled && patch.afk.enabled; CP.ui.toast('Settings saved', 'ok'); }
       catch (e) { CP.ui.toast(e.message, 'err'); }
@@ -428,7 +431,8 @@
           h('div', { style: { marginTop: '8px' } },
             switchRow('Allow sign-ups', 'Show "Create account" on the login page.', regEnabled),
             switchRow('Require approval', 'New sign-ups must be approved before they can create servers.', regApproval),
-            switchRow('Economy & shop', 'Enable coins and the resource shop.', econEnabled))),
+            switchRow('Economy & shop', 'Enable coins and the resource shop.', econEnabled),
+            switchRow('Recommend admin 2FA', 'Show a security reminder to admins without two-factor enabled.', force2fa))),
         h('div', { class: 'card' },
           h('h3', { html: `${icon('zap', 16)} New-user defaults` }),
           h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px', marginTop: '8px' } },
@@ -588,6 +592,70 @@
       )));
       root.appendChild(grid);
     } catch (err) { CP.clear(root); root.appendChild(CP.empty('alert', err.message)); }
+  }
+
+  /* ---------------- Database hosts ---------------- */
+  async function databasesTab(root) {
+    const reload = () => databasesTab(CP.clear(root));
+    root.appendChild(h('div', { class: 'fm-bar' }, h('div', { style: { flex: 1 } }),
+      h('button', { class: 'btn primary', html: `${icon('plus', 14)} Add Host`, onclick: () => hostModal(null, reload) })));
+    const wrap = tableCard(CP.spinner());
+    root.appendChild(wrap);
+    try {
+      const res = await CP.api.adminDatabaseHosts();
+      const hosts = res.data || [];
+      CP.clear(wrap);
+      if (!res.driver) {
+        root.insertBefore(h('div', { class: 'note', style: { marginBottom: '14px' },
+          html: `${icon('alert', 15)} The <b>mysql2</b> driver isn't installed on the panel — run <span class="mono">npm install mysql2</span> to enable real provisioning.` }), wrap);
+      }
+      if (!hosts.length) { wrap.appendChild(CP.empty('drive', 'No database hosts yet — add a MySQL/MariaDB host so servers can create databases.')); return; }
+      const tbody = h('tbody');
+      hosts.forEach((hh) => tbody.appendChild(h('tr', {},
+        h('td', {}, h('b', {}, CP.esc(hh.name))),
+        h('td', { class: 'mono muted' }, `${hh.host}:${hh.port}`),
+        h('td', { class: 'muted' }, hh.phpMyAdminUrl ? 'phpMyAdmin ✓' : '—'),
+        h('td', {}, h('div', { class: 'row-actions' },
+          h('button', { class: 'btn sm ghost', html: `${icon('zap', 13)} Test`, onclick: () => testHost(hh.id) }),
+          h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => hostModal(hh, reload) }),
+          h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delHost(hh, reload) })))
+      )));
+      wrap.appendChild(h('table', { class: 'tbl' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Address'), h('th', {}, 'phpMyAdmin'), h('th', { class: 'right' }, 'Actions'))), tbody));
+    } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
+  }
+  async function testHost(id) {
+    CP.ui.toast('Testing connection…', 'info');
+    try { const r = await CP.api.adminTestDatabaseHost(id); CP.ui.toast(`Connected — server ${r.data.version || 'OK'}`, 'ok'); }
+    catch (e) { CP.ui.toast(e.message, 'err'); }
+  }
+  function hostModal(hh, done) {
+    const name = h('input', { value: hh ? hh.name : '', placeholder: 'Primary DB' });
+    const host = h('input', { value: hh ? hh.host : '127.0.0.1', placeholder: '127.0.0.1' });
+    const port = h('input', { type: 'number', value: hh ? hh.port : 3306 });
+    const username = h('input', { value: hh ? hh.username : 'root', placeholder: 'root' });
+    const password = h('input', { type: 'password', placeholder: hh ? 'Leave blank to keep' : 'admin password' });
+    const pma = h('input', { value: hh ? hh.phpMyAdminUrl : '', placeholder: 'https://pma.example.com (optional)' });
+    const ref = CP.ui.modal({
+      title: hh ? `Edit ${hh.name}` : 'Add database host', size: 'lg',
+      body: h('div', {},
+        h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 16px' } },
+          h('label', { class: 'field' }, h('span', {}, 'Display name'), name),
+          h('label', { class: 'field' }, h('span', {}, 'Host / IP'), host),
+          h('label', { class: 'field' }, h('span', {}, 'Port'), port),
+          h('label', { class: 'field' }, h('span', {}, 'Admin username'), username),
+          h('label', { class: 'field' }, h('span', {}, 'Admin password'), password),
+          h('label', { class: 'field' }, h('span', {}, 'phpMyAdmin URL'), pma))),
+      footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+        h('button', { class: 'btn primary', onclick: async () => {
+          const body = { name: name.value, host: host.value, port: +port.value, username: username.value, password: password.value, phpMyAdminUrl: pma.value };
+          try { if (hh) await CP.api.adminUpdateDatabaseHost(hh.id, body); else await CP.api.adminAddDatabaseHost(body); CP.ui.toast('Saved', 'ok'); ref.close(); done(); }
+          catch (err) { CP.ui.toast(err.message, 'err'); } } }, 'Save')],
+    });
+  }
+  async function delHost(hh, done) {
+    if (!(await CP.ui.confirm({ title: 'Delete host', message: `Delete ${hh.name}?`, confirmText: 'Delete' }))) return;
+    try { await CP.api.adminDeleteDatabaseHost(hh.id); CP.ui.toast('Deleted', 'ok'); done(); } catch (err) { CP.ui.toast(err.message, 'err'); }
   }
 
   /* ---------------- Login / Discord OAuth ---------------- */

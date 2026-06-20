@@ -6,14 +6,27 @@
   CP.pages = CP.pages || {};
 
   const TABS = [
-    { id: 'console', label: 'Console', icon: 'terminal' },
-    { id: 'files', label: 'Files', icon: 'folder' },
-    { id: 'backups', label: 'Backups', icon: 'box' },
-    { id: 'automations', label: 'Automations', icon: 'zap' },
-    { id: 'network', label: 'Network', icon: 'network' },
-    { id: 'startup', label: 'Startup', icon: 'sliders' },
-    { id: 'settings', label: 'Settings', icon: 'settings' },
+    { id: 'console', label: 'Console', icon: 'terminal', perm: 'control.console' },
+    { id: 'files', label: 'Files', icon: 'folder', perm: 'file' },
+    { id: 'mods', label: 'Mods', icon: 'box', perm: 'file' },
+    { id: 'databases', label: 'Databases', icon: 'drive', perm: 'database' },
+    { id: 'backups', label: 'Backups', icon: 'box', perm: 'backup' },
+    { id: 'schedules', label: 'Schedules', icon: 'clock', perm: 'schedule' },
+    { id: 'automations', label: 'Automations', icon: 'zap', perm: 'automation' },
+    { id: 'players', label: 'Players', icon: 'users', perm: 'player' },
+    { id: 'metrics', label: 'Metrics', icon: 'activity', perm: 'control.console' },
+    { id: 'network', label: 'Network', icon: 'network', perm: 'allocation' },
+    { id: 'startup', label: 'Startup', icon: 'sliders', perm: 'startup' },
+    { id: 'subusers', label: 'Subusers', icon: 'users', ownerOnly: true },
+    { id: 'settings', label: 'Settings', icon: 'settings', perm: 'settings' },
   ];
+
+  function allowedTabs(server) {
+    const access = server.access || { owner: true, permissions: [] };
+    if (access.owner) return TABS.slice();
+    const perms = access.permissions || [];
+    return TABS.filter((t) => !t.ownerOnly && t.perm && perms.includes(t.perm));
+  }
 
   CP.pages.server = async function (root, ctx) {
     const id = ctx.params.id;
@@ -28,15 +41,24 @@
     }
     CP.clear(root);
 
+    const access = server.access || { owner: true, permissions: [] };
+    const can = (perm) => access.owner || (access.permissions || []).includes(perm);
+    const tabs = allowedTabs(server);
+    if (!tabs.length) { root.appendChild(CP.empty('lock', 'You do not have access to any part of this server.')); return; }
+
     const S = {
       server,
+      access,
+      can,
       status: server.status,
       stats: server.resources || { cpu: 0, memory: 0, uptime: 0 },
       history: { cpu: [], mem: [] },
       logBuffer: [],
       term: null,
       tiles: null,
-      activeTab: ctx.params.tab && TABS.some((t) => t.id === ctx.params.tab) ? ctx.params.tab : 'console',
+      tabCleanups: [],
+      onTabCleanup(fn) { this.tabCleanups.push(fn); },
+      activeTab: ctx.params.tab && tabs.some((t) => t.id === ctx.params.tab) ? ctx.params.tab : tabs[0].id,
     };
 
     ctx.setCrumbs([{ label: 'Servers', href: '/' }, { label: server.name }]);
@@ -46,6 +68,7 @@
     const powerRow = h('div', { class: 'power-row' });
     function renderPower() {
       CP.clear(powerRow);
+      if (!can('control.power')) return; // subusers without power control see no buttons
       if (S.status === 'installing') {
         powerRow.appendChild(h('button', { class: 'btn', disabled: true, html: `${icon('refresh', 15)} Installing…` }));
         return;
@@ -82,7 +105,7 @@
     /* ---- Subnav ---- */
     const subnav = h('div', { class: 'subnav' });
     const content = h('div', {});
-    TABS.forEach((t) => {
+    tabs.forEach((t) => {
       const a = h('a', { class: S.activeTab === t.id ? 'active' : '', html: `${icon(t.icon, 16)} ${t.label}`,
         onclick: () => switchTab(t.id) });
       t.node = a;
@@ -92,16 +115,24 @@
 
     function switchTab(tab) {
       S.activeTab = tab;
-      TABS.forEach((t) => t.node.classList.toggle('active', t.id === tab));
+      tabs.forEach((t) => t.node.classList.toggle('active', t.id === tab));
       history.replaceState({}, '', `/server/${server.id}/${tab}`);
       renderTab();
     }
 
     function renderTab() {
+      // tear down anything the previous tab started (polls, sockets)
+      S.tabCleanups.forEach((fn) => { try { fn(); } catch {} });
+      S.tabCleanups = [];
       S.term = null; S.tiles = null;
       CP.clear(content);
-      const fn = { console: tabConsole, files: tabFiles, backups: tabBackups, automations: tabAutomations, network: tabNetwork, startup: tabStartup, settings: tabSettings }[S.activeTab];
-      fn(S, content, ctx);
+      const fn = {
+        console: tabConsole, files: tabFiles, mods: tabMods, databases: tabDatabases,
+        backups: tabBackups, schedules: tabSchedules, automations: tabAutomations,
+        players: tabPlayers, metrics: tabMetrics, network: tabNetwork, startup: tabStartup,
+        subusers: tabSubusers, settings: tabSettings,
+      }[S.activeTab];
+      (fn || tabConsole)(S, content, ctx);
     }
     renderTab();
 
@@ -687,6 +718,7 @@
         rename
       ),
       h('div', { class: 'card' }, h('h3', { style: { marginBottom: '16px' } }, 'Information'), info),
+      statusPageCard(S),
     ];
 
     if (S.server.eggDetail && S.server.eggDetail.installer && S.server.eggDetail.installer !== 'none') {
@@ -719,5 +751,486 @@
     }
 
     root.appendChild(h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } }, cards));
+  }
+
+  /* ---- Public status page card (inside Settings) ---- */
+  function statusPageCard(S) {
+    const card = h('div', { class: 'card' }, CP.spinner('Loading status page…'));
+    (async () => {
+      let cfg;
+      try { cfg = (await CP.api.statusPageConfig(S.server.id)).data; }
+      catch (err) { CP.clear(card); card.appendChild(CP.empty('alert', err.message)); return; }
+      const enabled = h('input', { type: 'checkbox', class: 'switch' }); enabled.checked = !!cfg.enabled;
+      const showPlayers = h('input', { type: 'checkbox', class: 'switch' }); showPlayers.checked = cfg.showPlayers !== false;
+      const showResources = h('input', { type: 'checkbox', class: 'switch' }); showResources.checked = !!cfg.showResources;
+      const linkWrap = h('div', { style: { marginTop: '12px' } });
+      const renderLink = (slug) => {
+        CP.clear(linkWrap);
+        if (!slug) return;
+        const url = `${location.origin}/status/${slug}`;
+        linkWrap.append(
+          h('div', { class: 'muted', style: { fontSize: '12px', marginBottom: '4px' } }, 'Public URL'),
+          copyChip(url),
+          h('a', { class: 'btn sm ghost', style: { marginLeft: '8px' }, html: `${icon('globe', 13)} Open`, onclick: () => window.open('/status/' + slug, '_blank') }, '')
+        );
+      };
+      renderLink(cfg.slug);
+      const save = h('button', { class: 'btn primary', style: { marginTop: '14px' }, html: `${icon('save', 15)} Save status page`, onclick: async () => {
+        try {
+          const r = await CP.api.saveStatusPage(S.server.id, { enabled: enabled.checked, showPlayers: showPlayers.checked, showResources: showResources.checked });
+          renderLink(r.data.slug);
+          CP.ui.toast('Status page saved', 'ok');
+        } catch (err) { CP.ui.toast(err.message, 'err'); }
+      } });
+      CP.clear(card);
+      card.append(
+        h('h3', { html: `${icon('globe', 16)} Public status page` }),
+        h('p', { class: 'muted', style: { fontSize: '13px', margin: '4px 0 12px' } }, 'A shareable, read-only page showing live status and player count — no login required.'),
+        h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Enabled')), h('div', { style: { marginLeft: 'auto' } }, enabled)),
+        h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Show player list')), h('div', { style: { marginLeft: 'auto' } }, showPlayers)),
+        h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Show resources & uptime')), h('div', { style: { marginLeft: 'auto' } }, showResources)),
+        linkWrap, save
+      );
+    })();
+    return card;
+  }
+
+  /* ============================ MODS / PLUGINS (Modrinth) ============================ */
+  function tabMods(S, root) {
+    const installedWrap = h('div', { class: 'card', style: { padding: 0, overflow: 'hidden' } }, CP.spinner('Reading installed…'));
+    const resultsWrap = h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', marginTop: '12px' } });
+    const search = h('input', { placeholder: 'Search Modrinth (e.g. EssentialsX, Sodium)…' });
+    const versionFilter = h('input', { placeholder: 'MC version (optional)', style: { maxWidth: '160px' } });
+    let folderLabel = h('span', { class: 'badge soft' }, '…');
+
+    async function loadInstalled() {
+      CP.clear(installedWrap); installedWrap.appendChild(CP.spinner('Reading installed…'));
+      try {
+        const d = (await CP.api.pluginInstalled(S.server.id)).data;
+        folderLabel.textContent = `${d.loader} → ${d.folder}/`;
+        CP.clear(installedWrap);
+        if (!d.files.length) { installedWrap.appendChild(CP.empty('box', `No files in ${d.folder}/ yet — search below to install some.`)); return; }
+        const tbody = h('tbody');
+        d.files.forEach((f) => tbody.appendChild(h('tr', {},
+          h('td', {}, h('div', { class: 'fm-name file', html: `${icon('box', 15)} ${CP.esc(f.name)}` })),
+          h('td', { class: 'muted mono nowrap' }, fmt.bytes(f.size)),
+          h('td', { class: 'muted nowrap' }, fmt.rel(f.modifiedAt)))));
+        installedWrap.appendChild(h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, `Installed in ${d.folder}/`), h('th', {}, 'Size'), h('th', {}, 'Modified'))), tbody));
+      } catch (err) { CP.clear(installedWrap); installedWrap.appendChild(CP.empty('alert', err.message)); }
+    }
+
+    async function doSearch() {
+      CP.clear(resultsWrap); resultsWrap.appendChild(CP.spinner('Searching Modrinth…'));
+      try {
+        const d = (await CP.api.pluginSearch(S.server.id, search.value.trim(), versionFilter.value.trim())).data;
+        folderLabel.textContent = `${d.loader} → ${d.folder}/`;
+        CP.clear(resultsWrap);
+        if (!d.hits.length) { resultsWrap.appendChild(CP.empty('search', 'No results — try a different search.')); return; }
+        d.hits.forEach((p) => resultsWrap.appendChild(modCard(p)));
+      } catch (err) { CP.clear(resultsWrap); resultsWrap.appendChild(CP.empty('alert', err.message)); }
+    }
+
+    function modCard(p) {
+      const installBtn = h('button', { class: 'btn sm primary', html: `${icon('up', 13)} Install`, onclick: () => pickVersion(p, installBtn) });
+      return h('div', { class: 'card' },
+        h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center' } },
+          p.icon ? h('img', { src: p.icon, alt: '', style: { width: '38px', height: '38px', borderRadius: '8px', objectFit: 'cover' } }) : h('div', { class: 'glyph', style: { width: '38px', height: '38px' }, html: icon('box', 18) }),
+          h('div', { style: { minWidth: 0 } }, h('b', {}, CP.esc(p.title)), h('div', { class: 'muted', style: { fontSize: '12px' } }, `by ${CP.esc(p.author || '—')} · ${(p.downloads || 0).toLocaleString()} dl`))),
+        h('p', { class: 'muted', style: { fontSize: '12.5px', lineHeight: '1.5', margin: '8px 0 10px', maxHeight: '54px', overflow: 'hidden' } }, p.description || ''),
+        h('div', { style: { display: 'flex', gap: '8px' } }, installBtn,
+          h('a', { class: 'btn sm ghost', html: `${icon('globe', 13)} Page`, onclick: () => window.open(`https://modrinth.com/project/${p.slug}`, '_blank') }, '')));
+    }
+
+    async function pickVersion(p, btn) {
+      btn.disabled = true;
+      let versions;
+      try { versions = (await CP.api.pluginVersions(S.server.id, p.projectId, versionFilter.value.trim())).data; }
+      catch (err) { btn.disabled = false; return CP.ui.toast(err.message, 'err'); }
+      btn.disabled = false;
+      if (!versions.length) return CP.ui.toast('No compatible versions for this server.', 'err');
+      const sel = h('select', {}, ...versions.slice(0, 50).map((v) => h('option', { value: v.id }, `${v.versionNumber} · MC ${v.gameVersions.slice(0, 3).join(', ')}`)));
+      const ref = CP.ui.modal({
+        title: `Install ${p.title}`,
+        body: h('div', {}, h('label', { class: 'field' }, h('span', {}, 'Version'), sel)),
+        footer: [
+          h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+          h('button', { class: 'btn primary', html: `${icon('up', 14)} Install`, onclick: async () => {
+            try { const r = await CP.api.pluginInstall(S.server.id, p.projectId, sel.value); CP.ui.toast(`Installed ${r.data.installed}`, 'ok'); ref.close(); loadInstalled(); }
+            catch (err) { CP.ui.toast(err.message, 'err'); }
+          } }),
+        ],
+      });
+    }
+
+    search.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+    root.append(
+      h('div', { class: 'fm-bar' },
+        h('div', { class: 'section-title', style: { margin: 0 } }, 'Plugins & Mods'), folderLabel,
+        h('div', { style: { flex: 1 } }),
+        versionFilter, search,
+        h('button', { class: 'btn sm primary', html: `${icon('search', 14)} Search`, onclick: doSearch }),
+        h('button', { class: 'btn sm', html: `${icon('refresh', 14)} Installed`, onclick: loadInstalled })),
+      h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } }, 'Search Modrinth and install straight into this server. Restart the server to load new plugins/mods.'),
+      installedWrap, resultsWrap
+    );
+    loadInstalled();
+    doSearch();
+  }
+
+  /* ============================ DATABASES ============================ */
+  function tabDatabases(S, root) {
+    const wrap = h('div', { class: 'card', style: { padding: 0, overflow: 'hidden' } }, CP.spinner('Loading databases…'));
+    const note = h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } }, 'MySQL / MariaDB databases for this server.');
+    let state = { hosts: [], limit: 0, used: 0, driver: true };
+
+    async function load() {
+      CP.clear(wrap); wrap.appendChild(CP.spinner('Loading databases…'));
+      try {
+        const res = await CP.api.databases(S.server.id);
+        state = { hosts: res.hosts || [], limit: res.limit || 0, used: res.used || 0, driver: res.driver };
+        note.textContent = `${state.used} of ${state.limit} databases used.` + (state.driver ? '' : ' (MySQL driver not installed on the panel — ask an admin.)');
+        CP.clear(wrap);
+        const list = res.data || [];
+        if (!list.length) { wrap.appendChild(CP.empty('drive', 'No databases yet — create one below.')); return; }
+        const tbody = h('tbody');
+        list.forEach((d) => tbody.appendChild(dbRow(d)));
+        wrap.appendChild(h('table', { class: 'tbl' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Database'), h('th', {}, 'Username'), h('th', {}, 'Host'), h('th', {}, 'Password'), h('th', { class: 'right' }, 'Actions'))), tbody));
+      } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
+    }
+
+    function dbRow(d) {
+      let shown = false;
+      const pw = h('span', { class: 'mono' }, '••••••••');
+      const reveal = h('button', { class: 'btn sm ghost icon', title: 'Show/Hide', html: icon('key', 14), onclick: () => { shown = !shown; pw.textContent = shown ? d.password : '••••••••'; } });
+      return h('tr', {},
+        h('td', { class: 'mono' }, d.database),
+        h('td', { class: 'mono muted' }, d.username),
+        h('td', { class: 'mono muted nowrap' }, `${d.host.host}:${d.host.port}`),
+        h('td', {}, h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, pw, reveal,
+          h('button', { class: 'btn sm ghost icon', title: 'Copy connection string', html: icon('copy', 14), onclick: () => CP.copy(d.connectionString || d.password) }))),
+        h('td', {}, h('div', { class: 'row-actions' },
+          d.host.phpMyAdminUrl ? h('a', { class: 'btn sm ghost icon', title: 'phpMyAdmin', html: icon('globe', 14), onclick: () => window.open(d.host.phpMyAdminUrl, '_blank') }, '') : null,
+          h('button', { class: 'btn sm ghost icon', title: 'Rotate password', html: icon('refresh', 14), onclick: () => rotate(d) }),
+          h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => del(d) }))));
+    }
+
+    async function create() {
+      if (!state.hosts.length) return CP.ui.toast('No database host configured — ask an admin to add one in Admin → Databases.', 'err');
+      if (state.used >= state.limit) return CP.ui.toast(`Database limit reached (${state.limit}).`, 'err');
+      const name = h('input', { placeholder: 'e.g. survival' });
+      const host = h('select', {}, ...state.hosts.map((hh) => h('option', { value: hh.id }, `${hh.name} (${hh.host})`)));
+      const remote = h('input', { value: '%', placeholder: '% (any host)' });
+      const ref = CP.ui.modal({
+        title: 'Create database',
+        body: h('div', {},
+          h('label', { class: 'field' }, h('span', {}, 'Name'), name),
+          h('label', { class: 'field' }, h('span', {}, 'Host'), host),
+          h('label', { class: 'field' }, h('span', {}, 'Allowed remote (connections from)'), remote)),
+        footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+          h('button', { class: 'btn primary', onclick: async () => {
+            try { await CP.api.createDatabase(S.server.id, { name: name.value, hostId: host.value, remote: remote.value }); CP.ui.toast('Database created', 'ok'); ref.close(); load(); }
+            catch (err) { CP.ui.toast(err.message, 'err'); }
+          } }, 'Create')],
+      });
+    }
+    async function rotate(d) {
+      if (!(await CP.ui.confirm({ title: 'Rotate password', message: `Generate a new password for ${d.database}?`, confirmText: 'Rotate', danger: false }))) return;
+      try { await CP.api.rotateDatabase(S.server.id, d.id); CP.ui.toast('Password rotated', 'ok'); load(); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+    async function del(d) {
+      if (!(await CP.ui.confirm({ title: 'Delete database', message: `Delete ${d.database}? This drops the database and its user.`, confirmText: 'Delete' }))) return;
+      try { await CP.api.deleteDatabase(S.server.id, d.id); CP.ui.toast('Database deleted', 'ok'); load(); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+
+    root.append(
+      h('div', { class: 'fm-bar' },
+        h('div', { class: 'section-title', style: { margin: 0 } }, 'Databases'),
+        h('div', { style: { flex: 1 } }),
+        h('button', { class: 'btn sm', html: `${icon('refresh', 14)} Refresh`, onclick: load }),
+        h('button', { class: 'btn sm primary', html: `${icon('plus', 14)} New Database`, onclick: create })),
+      note, wrap
+    );
+    load();
+  }
+
+  /* ============================ SCHEDULES (cron) ============================ */
+  function tabSchedules(S, root) {
+    const wrap = h('div', { class: 'card', style: { padding: 0, overflow: 'hidden' } }, CP.spinner('Loading schedules…'));
+    const PRESETS = [
+      ['Every day at 5:00', '0 5 * * *'], ['Every 6 hours', '0 */6 * * *'],
+      ['Every hour', '0 * * * *'], ['Every 15 minutes', '*/15 * * * *'],
+      ['Weekly (Sun 4:00)', '0 4 * * 0'],
+    ];
+
+    function modal(row, done) {
+      row = row || {};
+      const name = h('input', { value: row.name || '', placeholder: 'Nightly restart' });
+      const cron = h('input', { class: 'mono', value: row.cron || '0 5 * * *', placeholder: 'min hour dom mon dow' });
+      const presets = h('div', { class: 'grad-quick', style: { gap: '6px', flexWrap: 'wrap' } },
+        ...PRESETS.map(([label, expr]) => h('button', { class: 'btn sm ghost', onclick: () => { cron.value = expr; } }, label)));
+      const action = h('select', {}, ...[['command', 'Send a console command'], ['power', 'Power action'], ['backup', 'Create a backup']].map(([v, l]) => h('option', { value: v, selected: (row.action || 'command') === v }, l)));
+      const valWrap = h('div', {});
+      function renderVal() {
+        CP.clear(valWrap);
+        if (action.value === 'power') {
+          const sel = h('select', {}, ...['restart', 'stop', 'start', 'kill'].map((p) => h('option', { value: p, selected: row.value === p }, p)));
+          valWrap._get = () => sel.value; valWrap.appendChild(h('label', { class: 'field' }, h('span', {}, 'Power action'), sel));
+        } else if (action.value === 'backup') {
+          const inp = h('input', { value: row.action === 'backup' ? row.value || '' : '', placeholder: 'Scheduled backup' });
+          valWrap._get = () => inp.value; valWrap.appendChild(h('label', { class: 'field' }, h('span', {}, 'Backup name'), inp));
+        } else {
+          const inp = h('input', { value: row.action === 'command' ? row.value || '' : '', placeholder: 'say Restarting soon…' });
+          valWrap._get = () => inp.value; valWrap.appendChild(h('label', { class: 'field' }, h('span', {}, 'Console command'), inp));
+        }
+      }
+      action.addEventListener('change', renderVal); renderVal();
+      const onlyOnline = h('input', { type: 'checkbox', class: 'switch' }); onlyOnline.checked = !!row.onlyWhenOnline;
+      const enabled = h('input', { type: 'checkbox', class: 'switch' }); enabled.checked = row.enabled === undefined ? true : !!row.enabled;
+
+      const ref = CP.ui.modal({
+        title: row.id ? 'Edit schedule' : 'New schedule', size: 'lg',
+        body: h('div', {},
+          h('label', { class: 'field' }, h('span', {}, 'Name'), name),
+          h('label', { class: 'field' }, h('span', {}, 'Cron expression (min hour day month weekday)'), cron),
+          presets,
+          h('label', { class: 'field', style: { marginTop: '10px' } }, h('span', {}, 'Action'), action), valWrap,
+          h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Only when running'), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Skip if the server is offline')), h('div', { style: { marginLeft: 'auto' } }, onlyOnline)),
+          h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, 'Enabled')), h('div', { style: { marginLeft: 'auto' } }, enabled))),
+        footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+          h('button', { class: 'btn primary', html: `${icon('save', 15)} Save`, onclick: async () => {
+            const payload = { name: name.value, cron: cron.value, action: action.value, value: valWrap._get(), onlyWhenOnline: onlyOnline.checked, enabled: enabled.checked };
+            try { if (row.id) await CP.api.updateSchedule(S.server.id, row.id, payload); else await CP.api.createSchedule(S.server.id, payload); CP.ui.toast('Schedule saved', 'ok'); ref.close(); done(); }
+            catch (err) { CP.ui.toast(err.message, 'err'); }
+          } })],
+      });
+    }
+
+    async function del(r) {
+      if (!(await CP.ui.confirm({ title: 'Delete schedule', message: `Delete "${r.name}"?`, confirmText: 'Delete' }))) return;
+      try { await CP.api.deleteSchedule(S.server.id, r.id); CP.ui.toast('Deleted', 'ok'); load(); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+
+    async function load() {
+      CP.clear(wrap); wrap.appendChild(CP.spinner('Loading schedules…'));
+      try {
+        const list = (await CP.api.schedules(S.server.id)).data;
+        CP.clear(wrap);
+        if (!list.length) { wrap.appendChild(CP.empty('clock', 'No schedules yet — automate restarts, backups and timed commands.')); return; }
+        const tbody = h('tbody');
+        list.forEach((r) => {
+          const toggle = h('input', { type: 'checkbox', class: 'switch' }); toggle.checked = !!r.enabled;
+          toggle.addEventListener('change', async () => {
+            try { await CP.api.updateSchedule(S.server.id, r.id, { enabled: toggle.checked }); CP.ui.toast(toggle.checked ? 'Enabled' : 'Disabled', 'ok'); load(); }
+            catch (e) { toggle.checked = !toggle.checked; CP.ui.toast(e.message, 'err'); }
+          });
+          const actLabel = r.action === 'command' ? `Run: ${CP.esc(r.value)}` : r.action === 'power' ? `Power: ${r.value}` : `Backup: ${CP.esc(r.value)}`;
+          tbody.appendChild(h('tr', {},
+            h('td', {}, h('b', {}, CP.esc(r.name)), h('div', { class: 'mono muted', style: { fontSize: '12px' } }, r.cron)),
+            h('td', { class: 'muted' }, actLabel),
+            h('td', { class: 'muted nowrap', style: { fontSize: '12px' } }, r.nextRunAt ? fmt.date(r.nextRunAt) : '—'),
+            h('td', { class: 'muted nowrap', style: { fontSize: '12px' } }, r.lastRunAt ? fmt.rel(r.lastRunAt) : 'never'),
+            h('td', {}, toggle),
+            h('td', {}, h('div', { class: 'row-actions' },
+              h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => modal(r, load) }),
+              h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => del(r) })))));
+        });
+        wrap.appendChild(h('table', { class: 'tbl' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Schedule'), h('th', {}, 'Action'), h('th', {}, 'Next run'), h('th', {}, 'Last run'), h('th', {}, 'On'), h('th', { class: 'right' }, 'Edit'))), tbody));
+      } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
+    }
+
+    root.append(
+      h('div', { class: 'fm-bar' },
+        h('div', { class: 'section-title', style: { margin: 0 } }, 'Scheduled Tasks'),
+        h('div', { style: { flex: 1 } }),
+        h('button', { class: 'btn sm', html: `${icon('refresh', 14)} Refresh`, onclick: load }),
+        h('button', { class: 'btn sm primary', html: `${icon('clock', 14)} New Schedule`, onclick: () => modal(null, load) })),
+      h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } }, 'Run commands, power actions or backups on a cron schedule — a nightly restart, a 3am backup, timed announcements.'),
+      wrap
+    );
+    load();
+  }
+
+  /* ============================ PLAYERS ============================ */
+  function tabPlayers(S, root) {
+    const wrap = h('div', { class: 'card', style: { padding: 0, overflow: 'hidden' } }, CP.spinner('Loading players…'));
+    const countChip = h('span', { class: 'badge soft' }, '0 online');
+
+    async function load() {
+      try {
+        const d = (await CP.api.players(S.server.id)).data;
+        countChip.textContent = `${d.count} online`;
+        CP.clear(wrap);
+        if (S.status !== 'running') { wrap.appendChild(CP.empty('users', 'Server is offline.')); return; }
+        if (!d.online.length) { wrap.appendChild(CP.empty('users', 'No players online right now.')); return; }
+        const tbody = h('tbody');
+        d.online.forEach((p) => tbody.appendChild(h('tr', {},
+          h('td', {}, h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
+            h('img', { src: `https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/28`, alt: '', style: { width: '28px', height: '28px', borderRadius: '6px' }, onerror: (e) => { e.target.style.display = 'none'; } }),
+            h('b', {}, CP.esc(p.name)))),
+          h('td', {}, h('div', { class: 'row-actions' },
+            h('button', { class: 'btn sm ghost', html: `${icon('logout', 13)} Kick`, onclick: () => act('kick', p.name) }),
+            h('button', { class: 'btn sm red', html: `${icon('x', 13)} Ban`, onclick: () => act('ban', p.name) })))
+        )));
+        wrap.appendChild(h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'Player'), h('th', { class: 'right' }, 'Actions'))), tbody));
+      } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
+    }
+    async function act(kind, name) {
+      const fn = kind === 'ban' ? CP.api.banPlayer : CP.api.kickPlayer;
+      if (kind === 'ban' && !(await CP.ui.confirm({ title: 'Ban player', message: `Ban ${name}?`, confirmText: 'Ban' }))) return;
+      try { await fn.call(CP.api, S.server.id, name); CP.ui.toast(`${kind === 'ban' ? 'Banned' : 'Kicked'} ${name}`, 'ok'); setTimeout(load, 400); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+    async function refresh() { try { await CP.api.playersRefresh(S.server.id); } catch {} setTimeout(load, 400); }
+
+    root.append(
+      h('div', { class: 'fm-bar' },
+        h('div', { class: 'section-title', style: { margin: 0 } }, 'Players'), countChip,
+        h('div', { style: { flex: 1 } }),
+        h('button', { class: 'btn sm', html: `${icon('refresh', 14)} Refresh (/list)`, onclick: refresh })),
+      h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } }, "Who's online, parsed live from the console. Kick or ban with one click."),
+      wrap
+    );
+    load();
+    const timer = setInterval(load, 5000);
+    S.onTabCleanup(() => clearInterval(timer));
+  }
+
+  /* ============================ METRICS ============================ */
+  function tabMetrics(S, root) {
+    let range = 86400;
+    const summary = h('div', { class: 'grid stat-grid', style: { marginBottom: '16px' } });
+    const cpuCanvas = h('canvas', { style: { width: '100%', height: '160px' } });
+    const memCanvas = h('canvas', { style: { width: '100%', height: '160px' } });
+    const cpuCard = h('div', { class: 'card' }, h('h3', { html: `${icon('cpu', 15)} CPU load (%)` }), cpuCanvas);
+    const memCard = h('div', { class: 'card', style: { marginTop: '16px' } }, h('h3', { html: `${icon('drive', 15)} Memory` }), memCanvas);
+
+    const ranges = [['1h', 3600], ['6h', 21600], ['24h', 86400], ['7d', 604800]];
+    const rangeBtns = h('div', { class: 'grad-quick', style: { gap: '6px' } });
+    function renderRangeBtns() {
+      CP.clear(rangeBtns);
+      ranges.forEach(([l, v]) => rangeBtns.appendChild(h('button', { class: 'btn sm ' + (range === v ? 'primary' : 'ghost'), onclick: () => { range = v; renderRangeBtns(); load(); } }, l)));
+    }
+    renderRangeBtns();
+
+    async function load() {
+      try {
+        const res = await CP.api.serverMetrics(S.server.id, range);
+        const pts = res.data || [];
+        const sm = res.summary || {};
+        CP.clear(summary);
+        const tile = (ic, k, v) => h('div', { class: 'card tile' }, h('div', { class: 'k', html: `${icon(ic, 15)} ${k}` }), h('div', { class: 'v', html: v }));
+        summary.append(
+          tile('activity', 'Uptime', sm.uptimePercent == null ? '—' : `${sm.uptimePercent}<small>%</small>`),
+          tile('cpu', 'Peak CPU', `${(sm.peakCpu || 0).toFixed(0)}<small>%</small>`),
+          tile('drive', 'Peak RAM', fmt.bytes(sm.peakMem || 0)),
+          tile('clock', 'Samples', String(sm.samples || 0)));
+        CP.sparkline(cpuCanvas, pts.map((p) => p.cpu || 0), '#22d3ee');
+        CP.sparkline(memCanvas, pts.map((p) => (p.mem || 0) / 1048576), '#a855f7');
+        if (!pts.length) { cpuCanvas.getContext('2d').clearRect(0, 0, cpuCanvas.width, cpuCanvas.height); }
+      } catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+
+    root.append(
+      h('div', { class: 'fm-bar' },
+        h('div', { class: 'section-title', style: { margin: 0 } }, 'Historical Metrics'),
+        h('div', { style: { flex: 1 } }), rangeBtns),
+      h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } }, 'CPU, memory and uptime recorded every minute. Live values still stream on the Console tab.'),
+      summary, cpuCard, memCard
+    );
+    load();
+    const timer = setInterval(load, 60000);
+    S.onTabCleanup(() => clearInterval(timer));
+  }
+
+  /* ============================ SUBUSERS ============================ */
+  function tabSubusers(S, root) {
+    const wrap = h('div', { class: 'card', style: { padding: 0, overflow: 'hidden' } }, CP.spinner('Loading subusers…'));
+    let PERMS = [];
+
+    const PERM_LABELS = {
+      'control.console': 'View console & stats', 'control.command': 'Send commands', 'control.power': 'Start / stop / restart',
+      file: 'Manage files & mods', backup: 'Manage backups', automation: 'Manage automations', schedule: 'Manage schedules',
+      database: 'Manage databases', player: 'View players, kick & ban', startup: 'Edit startup variables',
+      allocation: 'View network / SFTP', settings: 'Rename & status page', activity: 'View activity log',
+    };
+
+    function permPicker(selected) {
+      const set = new Set(selected || []);
+      const inputs = {};
+      const grid = h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: '6px 14px' } },
+        ...PERMS.map((p) => {
+          const cb = h('input', { type: 'checkbox' }); cb.checked = set.has(p); inputs[p] = cb;
+          return h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' } }, cb, h('span', {}, PERM_LABELS[p] || p));
+        }));
+      return { grid, get: () => Object.keys(inputs).filter((p) => inputs[p].checked) };
+    }
+
+    function addModal() {
+      const ident = h('input', { placeholder: 'username or email' });
+      const picker = permPicker(['control.console', 'control.command']);
+      const ref = CP.ui.modal({
+        title: 'Add subuser', size: 'lg',
+        body: h('div', {},
+          h('label', { class: 'field' }, h('span', {}, 'Account (must already exist)'), ident),
+          h('div', { class: 'section-title', style: { margin: '12px 0 8px' } }, 'Permissions'), picker.grid),
+        footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+          h('button', { class: 'btn primary', html: `${icon('plus', 14)} Add`, onclick: async () => {
+            try { await CP.api.addSubuser(S.server.id, ident.value.trim(), picker.get()); CP.ui.toast('Subuser added', 'ok'); ref.close(); load(); }
+            catch (err) { CP.ui.toast(err.message, 'err'); }
+          } }, 'Add')],
+      });
+    }
+    function editModal(su) {
+      const picker = permPicker(su.permissions);
+      const ref = CP.ui.modal({
+        title: `Permissions · ${su.user.username}`, size: 'lg',
+        body: h('div', {}, picker.grid),
+        footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+          h('button', { class: 'btn primary', html: `${icon('save', 14)} Save`, onclick: async () => {
+            try { await CP.api.updateSubuser(S.server.id, su.id, picker.get()); CP.ui.toast('Updated', 'ok'); ref.close(); load(); }
+            catch (err) { CP.ui.toast(err.message, 'err'); }
+          } }, 'Save')],
+      });
+    }
+    async function del(su) {
+      if (!(await CP.ui.confirm({ title: 'Remove subuser', message: `Remove ${su.user.username}'s access?`, confirmText: 'Remove' }))) return;
+      try { await CP.api.deleteSubuser(S.server.id, su.id); CP.ui.toast('Removed', 'ok'); load(); }
+      catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+
+    async function load() {
+      CP.clear(wrap); wrap.appendChild(CP.spinner('Loading subusers…'));
+      try {
+        const res = await CP.api.serverSubusers(S.server.id);
+        PERMS = res.permissions || [];
+        const list = res.data || [];
+        CP.clear(wrap);
+        if (!list.length) { wrap.appendChild(CP.empty('users', 'No subusers yet — invite someone to help manage this server.')); return; }
+        const tbody = h('tbody');
+        list.forEach((su) => tbody.appendChild(h('tr', {},
+          h('td', {}, h('b', {}, CP.esc(su.user.username)), h('div', { class: 'muted', style: { fontSize: '12px' } }, su.user.email)),
+          h('td', { class: 'muted', style: { fontSize: '12px' } }, `${su.permissions.length} permission(s)`),
+          h('td', {}, h('div', { class: 'row-actions' },
+            h('button', { class: 'btn sm ghost icon', title: 'Edit permissions', html: icon('edit', 14), onclick: () => editModal(su) }),
+            h('button', { class: 'btn sm ghost icon', title: 'Remove', html: icon('trash', 14), onclick: () => del(su) })))
+        )));
+        wrap.appendChild(h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'User'), h('th', {}, 'Access'), h('th', { class: 'right' }, 'Actions'))), tbody));
+      } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
+    }
+
+    root.append(
+      h('div', { class: 'fm-bar' },
+        h('div', { class: 'section-title', style: { margin: 0 } }, 'Subusers'),
+        h('div', { style: { flex: 1 } }),
+        h('button', { class: 'btn sm primary', html: `${icon('plus', 14)} Add Subuser`, onclick: addModal })),
+      h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } }, 'Share this server with other accounts and choose exactly what each can do.'),
+      wrap
+    );
+    load();
   }
 })();
