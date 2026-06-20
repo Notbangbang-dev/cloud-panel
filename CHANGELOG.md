@@ -4,6 +4,20 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.1] — 2026-06-20
+
+### ✨ Changed — Forge, NeoForge & Sponge now auto-install
+- **Forge** and **NeoForge** now auto-download and **run their official
+  installer** for the chosen version, then set the correct run-args startup
+  command automatically (no manual jar upload).
+- **Sponge (SpongeVanilla)** auto-downloads its recommended build via the Sponge
+  API and accepts the EULA.
+- Installers can now return a generated startup command, which the panel applies
+  to the server (used by Forge/NeoForge).
+- **Spigot** remains upload-only (it can only be produced with BuildTools) — the
+  **Paper** egg is the auto-installing, plugin-compatible alternative.
+- **Bedrock** and **Terraria** remain upload-only (no stable public download API).
+
 ## [1.8.0] — 2026-06-20
 
 ### ✨ Added — More server types (eggs)

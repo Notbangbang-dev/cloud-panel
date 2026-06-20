@@ -12,8 +12,23 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const { pipeline } = require('stream/promises');
 const { Readable } = require('stream');
+
+/** Run a `java` command inside the server volume, streaming output to the console. */
+function runJava(args, cwd, log) {
+  return new Promise((resolve, reject) => {
+    let proc;
+    try { proc = spawn('java', args, { cwd, windowsHide: true }); }
+    catch (e) { return reject(new Error('Java is required to install this server. ' + e.message)); }
+    const pipe = (buf) => String(buf).split(/\r?\n/).forEach((l) => l.trim() && log('  ' + l.trim()));
+    proc.stdout.on('data', pipe);
+    proc.stderr.on('data', pipe);
+    proc.on('error', (e) => reject(new Error('Could not run Java (is it installed?): ' + e.message)));
+    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error('Installer exited with code ' + code))));
+  });
+}
 
 async function fetchJson(url) {
   const res = await fetch(url, { headers: { 'User-Agent': 'CloudPanel/1.0' } });
@@ -166,7 +181,82 @@ async function geyser({ dir, log }) {
   log('Geyser installed. Edit config.yml after first start to point it at your Java server.');
 }
 
-const INSTALLERS = { paper, folia, purpur, vanilla, fabric, velocity, waterfall, bungeecord, geyser };
+/* ---- Forge (downloads + RUNS the official installer) -------------------- */
+async function forge({ dir, vars, log }) {
+  log('Resolving Forge version…');
+  const promos = await fetchJson('https://maven.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json');
+  let mc = vars.MINECRAFT_VERSION;
+  let forgeVer = vars.FORGE_VERSION;
+  if (!forgeVer || forgeVer === 'latest') {
+    if (!mc || mc === 'latest') {
+      const mcs = Object.keys(promos.promos).filter((k) => k.endsWith('-latest')).map((k) => k.replace('-latest', ''));
+      mc = mcs.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop();
+    }
+    forgeVer = promos.promos[`${mc}-recommended`] || promos.promos[`${mc}-latest`];
+    if (!forgeVer) throw new Error(`No Forge build found for Minecraft ${mc}`);
+  }
+  const full = `${mc}-${forgeVer}`;
+  log(`Downloading Forge ${full} installer…`);
+  await download(`https://maven.minecraftforge.net/net/minecraftforge/forge/${full}/forge-${full}-installer.jar`, path.join(dir, 'forge-installer.jar'), log);
+  log('Running the Forge installer (this can take a minute)…');
+  await runJava(['-jar', 'forge-installer.jar', '--installServer'], dir, log);
+  acceptEula(dir, log);
+  defaultProperties(dir, 'A Cloud Panel Forge Server');
+  try { fs.rmSync(path.join(dir, 'forge-installer.jar'), { force: true }); } catch {}
+  log(`Forge ${full} installation complete.`);
+  return { startup: `java -Xms128M -Xmx{{SERVER_MEMORY}}M @libraries/net/minecraftforge/forge/${full}/unix_args.txt nogui` };
+}
+
+/* ---- NeoForge (downloads + RUNS the official installer) ----------------- */
+async function neoforge({ dir, vars, log }) {
+  log('Resolving NeoForge version…');
+  const meta = await fetchJson('https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge');
+  let ver = vars.NEOFORGE_VERSION;
+  if (!ver || ver === 'latest') {
+    const all = meta.versions || [];
+    const stable = all.filter((v) => !/(beta|alpha|rc|snapshot)/i.test(v));
+    ver = (stable.length ? stable : all).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop();
+    if (!ver) throw new Error('No NeoForge versions found');
+  }
+  log(`Downloading NeoForge ${ver} installer…`);
+  await download(`https://maven.neoforged.net/releases/net/neoforged/neoforge/${ver}/neoforge-${ver}-installer.jar`, path.join(dir, 'neoforge-installer.jar'), log);
+  log('Running the NeoForge installer…');
+  await runJava(['-jar', 'neoforge-installer.jar', '--installServer'], dir, log);
+  acceptEula(dir, log);
+  defaultProperties(dir, 'A Cloud Panel NeoForge Server');
+  try { fs.rmSync(path.join(dir, 'neoforge-installer.jar'), { force: true }); } catch {}
+  log(`NeoForge ${ver} installation complete.`);
+  return { startup: `java -Xms128M -Xmx{{SERVER_MEMORY}}M @libraries/net/neoforged/neoforge/${ver}/unix_args.txt nogui` };
+}
+
+/* ---- Sponge (SpongeVanilla) via the v2 downloads API -------------------- */
+async function sponge({ dir, vars, log }) {
+  const API = 'https://dl-api.spongepowered.org/v2/groups/org.spongepowered/artifacts/spongevanilla';
+  log('Resolving SpongeVanilla version…');
+  let version = vars.SPONGE_VERSION;
+  if (!version || version === 'latest') {
+    const list = await fetchJson(`${API}/versions?offset=0&limit=1&recommended=true`);
+    version = Object.keys(list.artifacts || {})[0];
+    if (!version) {
+      const any = await fetchJson(`${API}/versions?offset=0&limit=1`);
+      version = Object.keys(any.artifacts || {})[0];
+    }
+    if (!version) throw new Error('Could not resolve a SpongeVanilla version');
+  }
+  const meta = await fetchJson(`${API}/versions/${encodeURIComponent(version)}`);
+  const assets = meta.assets || [];
+  const jar = assets.find((a) => a.extension === 'jar' && a.classifier === 'universal')
+    || assets.find((a) => a.extension === 'jar' && (!a.classifier || a.classifier === ''))
+    || assets.find((a) => a.extension === 'jar');
+  if (!jar || !jar.downloadUrl) throw new Error('No SpongeVanilla server jar found for ' + version);
+  log(`Downloading SpongeVanilla ${version}…`);
+  await download(jar.downloadUrl, path.join(dir, 'server.jar'), log);
+  acceptEula(dir, log);
+  defaultProperties(dir, 'A Cloud Panel Sponge Server');
+  log(`SpongeVanilla ${version} installation complete.`);
+}
+
+const INSTALLERS = { paper, folia, purpur, vanilla, fabric, velocity, waterfall, bungeecord, geyser, forge, neoforge, sponge };
 
 module.exports = {
   has: (name) => Boolean(INSTALLERS[name]),

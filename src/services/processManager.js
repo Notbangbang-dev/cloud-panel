@@ -364,7 +364,13 @@ const manager = {
       ...(server.environment || {}),
     };
     try {
-      await installers.run(egg.installer, { dir: volumeDir(server), vars, log: (l) => r.pushLine(l) });
+      const result = await installers.run(egg.installer, { dir: volumeDir(server), vars, log: (l) => r.pushLine(l) });
+      // Some installers (Forge/NeoForge) generate version-specific run args and
+      // return the exact startup command to use.
+      if (result && result.startup) {
+        db.update('servers', server.id, { startup: result.startup });
+        server.startup = result.startup;
+      }
       r.pushLine('\u001b[32m[Cloud Panel] Installation finished — server is ready to start.\u001b[0m');
       r.setStatus('offline');
       db.log({ type: 'install', serverId: server.id, message: `Installed ${egg.name} on '${server.name}'` });
