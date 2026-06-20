@@ -36,7 +36,7 @@ function createUser({ username, email, password, admin = false, firstName = '', 
     // ---- economy / access ----
     status: status || 'active',
     coins: coins != null ? coins : d.coins,
-    resources: resources || { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers, backups: d.backups },
+    resources: resources || { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers, backups: d.backups, databases: d.databases },
     createdAt: new Date().toISOString(),
   });
 }

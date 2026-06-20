@@ -11,6 +11,7 @@
     { key: 'disk', label: 'Disk', icon: 'folderOpen', color: '#34d399', fmt: (n) => fmt.mib(n) },
     { key: 'servers', label: 'Server Slot', icon: 'server', color: '#fbbf24', fmt: (n) => `${n} slot${n === 1 ? '' : 's'}` },
     { key: 'backups', label: 'Backup Slot', icon: 'box', color: '#ec4899', fmt: (n) => `${n} backup${n === 1 ? '' : 's'}` },
+    { key: 'databases', label: 'Database Slot', icon: 'drive', color: '#38bdf8', fmt: (n) => `${n} database${n === 1 ? '' : 's'}` },
   ];
 
   CP.pages.shop = async function (root, ctx) {

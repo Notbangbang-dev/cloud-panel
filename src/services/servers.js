@@ -8,19 +8,24 @@ const pm = require('./processManager');
 
 function usedResources(userId) {
   const servers = db.filter('servers', (s) => s.ownerId === userId);
-  const ids = new Set(servers.map((s) => s.id));
   return {
     memory: servers.reduce((a, s) => a + (s.limits?.memory || 0), 0),
     cpu: servers.reduce((a, s) => a + (s.limits?.cpu || 0), 0),
     disk: servers.reduce((a, s) => a + (s.limits?.disk || 0), 0),
     servers: servers.length,
-    backups: db.filter('backups', (b) => ids.has(b.serverId)).length,
+    // v2: backups & databases are allocated per-server (featureLimits) and
+    // drawn from the account quota — so "used" is the sum of those allocations.
+    backups: servers.reduce((a, s) => a + (s.featureLimits?.backups || 0), 0),
+    databases: servers.reduce((a, s) => a + (s.featureLimits?.databases || 0), 0),
   };
 }
 
 function quotaFor(user) {
   const q = user.resources || {};
-  return { memory: q.memory || 0, cpu: q.cpu || 0, disk: q.disk || 0, servers: q.servers || 0, backups: q.backups || 0 };
+  return {
+    memory: q.memory || 0, cpu: q.cpu || 0, disk: q.disk || 0,
+    servers: q.servers || 0, backups: q.backups || 0, databases: q.databases || 0,
+  };
 }
 
 function availableResources(user) {
@@ -32,6 +37,7 @@ function availableResources(user) {
     disk: q.disk - used.disk,
     servers: q.servers - used.servers,
     backups: q.backups - used.backups,
+    databases: q.databases - used.databases,
   };
 }
 
@@ -51,6 +57,9 @@ function createServer({ name, ownerId, eggId, nodeId, allocationId, memory, cpu,
   if (alloc.serverId) throw new Error('That allocation is already in use');
   const node = db.get('nodes', alloc.nodeId);
 
+  // Allocate backup/database feature limits from whatever quota the owner has
+  // left (default 1 each), so creation never pushes the account over quota.
+  const avail = availableResources(owner);
   const server = db.insert('servers', {
     id: db.uid('srv'),
     uuid: db.uuid(),
@@ -71,7 +80,11 @@ function createServer({ name, ownerId, eggId, nodeId, allocationId, memory, cpu,
       cpu: Math.floor(Number(cpu) || 100),
       io: 500,
     },
-    featureLimits: { databases: 5, backups: 5, allocations: 5 },
+    featureLimits: {
+      databases: Math.max(0, Math.min(1, avail.databases)),
+      backups: Math.max(0, Math.min(1, avail.backups)),
+      allocations: 5,
+    },
     environment: {
       ...(egg.variables || []).reduce((a, v) => { a[v.env] = v.default; return a; }, {}),
       ...(environment || {}),

@@ -143,6 +143,7 @@
     accountResources() { return this.get('/account/resources'); },
     eggs() { return this.get('/eggs'); },
     createServer(payload) { return this.post('/servers', payload); },
+    buildServer(sid, body) { return this.put(`/servers/${sid}/build`, body); },
     shop() { return this.get('/shop'); },
     shopBuy(resource, quantity) { return this.post('/shop/buy', { resource, quantity }); },
     afkInfo() { return this.get('/afk'); },

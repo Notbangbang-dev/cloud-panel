@@ -717,9 +717,10 @@
         h('label', { class: 'field' }, h('span', {}, 'Description'), descInput),
         rename
       ),
+      S.access.owner ? resourcesCard(S) : null,
       h('div', { class: 'card' }, h('h3', { style: { marginBottom: '16px' } }, 'Information'), info),
       statusPageCard(S),
-    ];
+    ].filter(Boolean);
 
     if (S.server.eggDetail && S.server.eggDetail.installer && S.server.eggDetail.installer !== 'none') {
       cards.push(h('div', { class: 'card' },
@@ -751,6 +752,58 @@
     }
 
     root.appendChild(h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } }, cards));
+  }
+
+  /* ---- Resources editor (inside Settings, owner-only) ---- */
+  function resourcesCard(S) {
+    const card = h('div', { class: 'card' }, CP.spinner('Loading resources…'));
+    (async () => {
+      let res;
+      try { res = (await CP.api.accountResources()).data; }
+      catch (err) { CP.clear(card); card.appendChild(CP.empty('alert', err.message)); return; }
+      const avail = res.available || {};
+      const isAdmin = !!(CP.app.user && CP.app.user.admin);
+      const L = S.server.limits || {}, F = S.server.featureLimits || {};
+
+      // field: key, label, unit, current value, minimum
+      const rows = [
+        { k: 'memory', label: 'RAM', unit: 'MB', cur: L.memory || 0, min: 256 },
+        { k: 'cpu', label: 'CPU', unit: '%', cur: L.cpu || 0, min: 25 },
+        { k: 'disk', label: 'Disk', unit: 'MB', cur: L.disk || 0, min: 1024 },
+        { k: 'backups', label: 'Backups', unit: '', cur: F.backups || 0, min: 0 },
+        { k: 'databases', label: 'Databases', unit: '', cur: F.databases || 0, min: 0 },
+      ];
+      const inputs = {};
+      const fields = rows.map((r) => {
+        const max = (avail[r.k] || 0) + r.cur; // how high they can go
+        const inp = h('input', { type: 'number', value: r.cur, min: r.min });
+        inputs[r.k] = inp;
+        const hint = isAdmin ? 'admin — no quota limit' : `max ${Math.max(r.min, max)}${r.unit ? ' ' + r.unit : ''} (${Math.max(0, avail[r.k] || 0)} free)`;
+        return h('label', { class: 'field' },
+          h('span', {}, `${r.label}${r.unit ? ' (' + r.unit + ')' : ''}`), inp,
+          h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '4px' } }, hint));
+      });
+
+      const save = h('button', { class: 'btn primary', style: { marginTop: '14px' }, html: `${icon('save', 15)} Save resources`, onclick: async () => {
+        const body = {}; Object.keys(inputs).forEach((k) => (body[k] = +inputs[k].value));
+        save.disabled = true;
+        try {
+          const r = await CP.api.buildServer(S.server.id, body);
+          S.server = r.data; CP.ui.toast('Resources updated', 'ok');
+          resourcesCardRefresh();
+        } catch (err) { CP.ui.toast(err.message, 'err'); save.disabled = false; }
+      } });
+      function resourcesCardRefresh() { const fresh = resourcesCard(S); card.replaceWith(fresh); }
+
+      CP.clear(card);
+      card.append(
+        h('h3', { html: `${icon('sliders', 16)} Resources` }),
+        h('p', { class: 'muted', style: { fontSize: '13px', margin: '4px 0 12px' } }, 'Adjust this server within your account quota. Buy more in the Shop.'),
+        h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 14px' } }, fields),
+        save
+      );
+    })();
+    return card;
   }
 
   /* ---- Public status page card (inside Settings) ---- */

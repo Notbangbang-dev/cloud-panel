@@ -22,7 +22,7 @@ const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocati
 const SETTINGS_DEFAULTS = {
   economy: { enabled: true },
   registration: { enabled: true, requireApproval: true },
-  defaults: { coins: 500, memory: 2048, cpu: 150, disk: 10240, servers: 2, backups: 1 },
+  defaults: { coins: 500, memory: 2048, cpu: 150, disk: 10240, servers: 2, backups: 1, databases: 1 },
   limits: { minMemory: 256, minCpu: 25, minDisk: 1024 },
   afk: { enabled: true, coins: 1, intervalSeconds: 30 },
   shop: {
@@ -31,6 +31,7 @@ const SETTINGS_DEFAULTS = {
     disk: { price: 60, amount: 5120 },
     servers: { price: 400, amount: 1 },
     backups: { price: 250, amount: 1 },
+    databases: { price: 200, amount: 1 },
   },
   // Look & feel — fully admin-customizable theming (see services/appearance.js).
   // NOTE: keep this default in sync with DEFAULT_APPEARANCE in services/appearance.js.
@@ -549,10 +550,21 @@ function migrateUsers() {
     if (u.totp === undefined) patch.totp = { enabled: !!u.twoFactor, secret: null, backupCodes: [] };
     if (u.twoFactor === undefined) patch.twoFactor = false;
     if (u.coins === undefined) patch.coins = d.coins;
-    if (!u.resources || typeof u.resources !== 'object')
-      patch.resources = { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers, backups: d.backups };
-    else if (u.resources.backups === undefined)
-      patch.resources = { ...u.resources, backups: d.backups }; // backfill new backups quota
+    if (!u.resources || typeof u.resources !== 'object') {
+      patch.resources = { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers, backups: d.backups, databases: d.databases };
+    } else if (u.resources.databases === undefined) {
+      // v2: backups & databases are now drawn from the account quota (sum of
+      // per-server featureLimits). Backfill the databases quota and make sure
+      // both quotas cover what existing servers already allocate (no negatives).
+      const owned = backend.filter('servers', (s) => s.ownerId === u.id);
+      const allocBackups = owned.reduce((a, s) => a + ((s.featureLimits && s.featureLimits.backups) || 0), 0);
+      const allocDbs = owned.reduce((a, s) => a + ((s.featureLimits && s.featureLimits.databases) || 0), 0);
+      patch.resources = {
+        ...u.resources,
+        backups: Math.max(u.resources.backups || 0, allocBackups, d.backups || 0),
+        databases: Math.max(allocDbs, d.databases || 0),
+      };
+    }
     if (Object.keys(patch).length) backend.update('users', u.id, patch);
   }
 }
@@ -562,9 +574,9 @@ function migrateServers() {
   for (const s of backend.all('servers')) {
     const patch = {};
     if (!s.featureLimits || typeof s.featureLimits !== 'object')
-      patch.featureLimits = { databases: 5, backups: 5, allocations: 5 };
+      patch.featureLimits = { databases: 1, backups: 1, allocations: 5 };
     else if (s.featureLimits.databases === undefined)
-      patch.featureLimits = { ...s.featureLimits, databases: 5 };
+      patch.featureLimits = { ...s.featureLimits, databases: 1 };
     if (s.statusPage === undefined)
       patch.statusPage = { enabled: false, slug: null, showPlayers: true, showResources: false };
     if (Object.keys(patch).length) backend.update('servers', s.id, patch);

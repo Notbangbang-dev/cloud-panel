@@ -73,6 +73,7 @@
     el.appendChild(resTile('folderOpen', 'Disk free', `${fmt.mib(Math.max(0, a.disk))}`, `of ${fmt.mib(q.disk)}`));
     el.appendChild(resTile('server', 'Server slots', `${Math.max(0, a.servers)}`, `of ${q.servers}`));
     el.appendChild(resTile('box', 'Backups', `${Math.max(0, a.backups ?? 0)}`, `of ${q.backups ?? 0}`));
+    el.appendChild(resTile('drive', 'Databases', `${Math.max(0, a.databases ?? 0)}`, `of ${q.databases ?? 0}`));
   }
 
   async function openCreateModal(onCreated) {

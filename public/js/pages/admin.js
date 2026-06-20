@@ -123,6 +123,7 @@
         h('td', { class: 'muted nowrap' }, fmt.mib(s.limits.memory)),
         h('td', {}, h('div', { class: 'row-actions' },
           h('button', { class: 'btn sm ghost icon', title: 'Open', html: icon('chevron', 14), onclick: () => CP.app.go(`/server/${s.id}`) }),
+          h('button', { class: 'btn sm ghost icon', title: 'Edit resources', html: icon('edit', 14), onclick: () => editServerModal(s, () => servers(CP.clear(root))) }),
           h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delServer(s, () => servers(CP.clear(root))) })))
       )));
       wrap.appendChild(h('table', { class: 'tbl' },
@@ -154,6 +155,8 @@
     const mem = h('input', { type: 'number', value: '2048' });
     const disk = h('input', { type: 'number', value: '8192' });
     const cpu = h('input', { type: 'number', value: '200' });
+    const dbLimit = h('input', { type: 'number', value: '1', min: '0' });
+    const backupLimit = h('input', { type: 'number', value: '1', min: '0' });
 
     const eggDesc = h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '8px 0 0', lineHeight: '1.55' } });
     const eggBadge = h('div', { style: { margin: '8px 0 0' } });
@@ -191,7 +194,11 @@
         h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16px' } },
           h('label', { class: 'field' }, h('span', {}, 'Memory (MB)'), mem),
           h('label', { class: 'field' }, h('span', {}, 'Disk (MB)'), disk),
-          h('label', { class: 'field' }, h('span', {}, 'CPU (%)'), cpu))),
+          h('label', { class: 'field' }, h('span', {}, 'CPU (%)'), cpu)),
+        h('div', { class: 'section-title', style: { margin: '8px 0 6px' } }, 'Feature limits'),
+        h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 16px' } },
+          h('label', { class: 'field' }, h('span', {}, 'Databases'), dbLimit),
+          h('label', { class: 'field' }, h('span', {}, 'Backups'), backupLimit))),
       footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
         h('button', { class: 'btn primary', onclick: async () => {
           const environment = {};
@@ -200,6 +207,7 @@
             const res = await CP.api.post('/admin/servers', {
               name: name.value, ownerId: owner.value, nodeId: node.value, eggId: egg.value,
               memory: +mem.value, disk: +disk.value, cpu: +cpu.value, environment,
+              featureLimits: { databases: +dbLimit.value, backups: +backupLimit.value },
             });
             const e = eggById[egg.value];
             ref.close(); done();
@@ -214,6 +222,41 @@
     });
     renderEgg();
   }
+  function editServerModal(s, done) {
+    const L = s.limits || {}, F = s.featureLimits || {};
+    const mem = h('input', { type: 'number', value: L.memory || 0 });
+    const cpu = h('input', { type: 'number', value: L.cpu || 0 });
+    const disk = h('input', { type: 'number', value: L.disk || 0 });
+    const dbs = h('input', { type: 'number', value: F.databases || 0, min: '0' });
+    const bks = h('input', { type: 'number', value: F.backups || 0, min: '0' });
+    const allo = h('input', { type: 'number', value: F.allocations || 0, min: '0' });
+    const ref = CP.ui.modal({
+      title: `Resources · ${s.name}`, size: 'lg',
+      body: h('div', {},
+        h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '0 0 12px' } }, 'Admins set these directly — not bound by the owner\'s quota.'),
+        h('div', { class: 'section-title', style: { margin: '0 0 6px' } }, 'Resource limits'),
+        h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr', gap: '0 14px' } },
+          h('label', { class: 'field' }, h('span', {}, 'RAM (MB)'), mem),
+          h('label', { class: 'field' }, h('span', {}, 'CPU (%)'), cpu),
+          h('label', { class: 'field' }, h('span', {}, 'Disk (MB)'), disk)),
+        h('div', { class: 'section-title', style: { margin: '8px 0 6px' } }, 'Feature limits'),
+        h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr', gap: '0 14px' } },
+          h('label', { class: 'field' }, h('span', {}, 'Databases'), dbs),
+          h('label', { class: 'field' }, h('span', {}, 'Backups'), bks),
+          h('label', { class: 'field' }, h('span', {}, 'Allocations'), allo))),
+      footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
+        h('button', { class: 'btn primary', html: `${icon('save', 14)} Save`, onclick: async () => {
+          try {
+            await CP.api.request('PATCH', `/admin/servers/${s.id}`, {
+              limits: { memory: +mem.value, cpu: +cpu.value, disk: +disk.value },
+              featureLimits: { databases: +dbs.value, backups: +bks.value, allocations: +allo.value },
+            });
+            CP.ui.toast('Server resources updated', 'ok'); ref.close(); done();
+          } catch (err) { CP.ui.toast(err.message, 'err'); }
+        } }, 'Save')],
+    });
+  }
+
   async function delServer(s, done) {
     if (!(await CP.ui.confirm({ title: 'Delete server', message: `Delete "${s.name}" and all data?`, confirmText: 'Delete' }))) return;
     try { await CP.api.del(`/admin/servers/${s.id}`); CP.ui.toast('Deleted', 'ok'); done(); } catch (err) { CP.ui.toast(err.message, 'err'); }
@@ -337,6 +380,7 @@
     const disk = h('input', { type: 'number', value: r.disk || 0 });
     const slots = h('input', { type: 'number', value: r.servers || 0 });
     const backupsQ = h('input', { type: 'number', value: r.backups || 0 });
+    const databasesQ = h('input', { type: 'number', value: r.databases || 0 });
 
     const body = h('div', {},
       h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 16px' } },
@@ -348,12 +392,13 @@
         h('label', { class: 'field' }, h('span', {}, 'Coins'), coins)),
       h('label', { style: { display: 'flex', alignItems: 'center', gap: '10px', margin: '2px 0 8px', cursor: 'pointer' } }, admin, h('span', { class: 'muted' }, 'Administrator (full access)')),
       h('div', { class: 'section-title', style: { margin: '10px 0 6px' } }, 'Resource quota'),
-      h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '0 12px' } },
+      h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(3, 1fr)', gap: '0 12px' } },
         h('label', { class: 'field' }, h('span', {}, 'RAM (MB)'), mem),
         h('label', { class: 'field' }, h('span', {}, 'CPU (%)'), cpu),
         h('label', { class: 'field' }, h('span', {}, 'Disk (MB)'), disk),
         h('label', { class: 'field' }, h('span', {}, 'Slots'), slots),
-        h('label', { class: 'field' }, h('span', {}, 'Backups'), backupsQ)));
+        h('label', { class: 'field' }, h('span', {}, 'Backups'), backupsQ),
+        h('label', { class: 'field' }, h('span', {}, 'Databases'), databasesQ)));
 
     const ref = CP.ui.modal({ title: `Edit ${u.username}`, size: 'lg', body, footer: [
       h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
@@ -361,7 +406,7 @@
         const patch = {
           email: email.value, firstName: first.value, lastName: last.value, admin: admin.checked,
           status: status.value, coins: +coins.value,
-          resources: { memory: +mem.value, cpu: +cpu.value, disk: +disk.value, servers: +slots.value, backups: +backupsQ.value },
+          resources: { memory: +mem.value, cpu: +cpu.value, disk: +disk.value, servers: +slots.value, backups: +backupsQ.value, databases: +databasesQ.value },
         };
         if (password.value) patch.password = password.value;
         try { await CP.api.request('PATCH', `/admin/users/${u.id}`, patch); CP.ui.toast('User updated', 'ok'); ref.close(); done(); }
@@ -391,10 +436,10 @@
     const regEnabled = sw(s.registration.enabled);
     const regApproval = sw(s.registration.requireApproval);
     const force2fa = sw(s.security && s.security.force2faAdmins);
-    const dCoins = numIn(s.defaults.coins), dMem = numIn(s.defaults.memory), dCpu = numIn(s.defaults.cpu), dDisk = numIn(s.defaults.disk), dServers = numIn(s.defaults.servers), dBackups = numIn(s.defaults.backups);
+    const dCoins = numIn(s.defaults.coins), dMem = numIn(s.defaults.memory), dCpu = numIn(s.defaults.cpu), dDisk = numIn(s.defaults.disk), dServers = numIn(s.defaults.servers), dBackups = numIn(s.defaults.backups), dDatabases = numIn(s.defaults.databases ?? 1);
     const minMem = numIn(s.limits.minMemory), minCpu = numIn(s.limits.minCpu), minDisk = numIn(s.limits.minDisk);
     const shop = {};
-    ['memory', 'cpu', 'disk', 'servers', 'backups'].forEach((k) => { shop[k] = { price: numIn(s.shop[k].price), amount: numIn(s.shop[k].amount) }; });
+    ['memory', 'cpu', 'disk', 'servers', 'backups', 'databases'].forEach((k) => { const it = s.shop[k] || { price: 0, amount: 1 }; shop[k] = { price: numIn(it.price), amount: numIn(it.amount) }; });
     const afkOn = sw(s.afk && s.afk.enabled);
     const afkCoins = numIn(s.afk ? s.afk.coins : 1);
     const afkInterval = numIn(s.afk ? s.afk.intervalSeconds : 30);
@@ -408,7 +453,7 @@
       const patch = {
         economy: { enabled: econEnabled.checked },
         registration: { enabled: regEnabled.checked, requireApproval: regApproval.checked },
-        defaults: { coins: +dCoins.value, memory: +dMem.value, cpu: +dCpu.value, disk: +dDisk.value, servers: +dServers.value, backups: +dBackups.value },
+        defaults: { coins: +dCoins.value, memory: +dMem.value, cpu: +dCpu.value, disk: +dDisk.value, servers: +dServers.value, backups: +dBackups.value, databases: +dDatabases.value },
         limits: { minMemory: +minMem.value, minCpu: +minCpu.value, minDisk: +minDisk.value },
         shop: {
           memory: { price: +shop.memory.price.value, amount: +shop.memory.amount.value },
@@ -416,6 +461,7 @@
           disk: { price: +shop.disk.price.value, amount: +shop.disk.amount.value },
           servers: { price: +shop.servers.price.value, amount: +shop.servers.amount.value },
           backups: { price: +shop.backups.price.value, amount: +shop.backups.amount.value },
+          databases: { price: +shop.databases.price.value, amount: +shop.databases.amount.value },
         },
         afk: { enabled: afkOn.checked, coins: +afkCoins.value, intervalSeconds: +afkInterval.value },
         security: { force2faAdmins: force2fa.checked },
@@ -437,7 +483,7 @@
           h('h3', { html: `${icon('zap', 16)} New-user defaults` }),
           h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px', marginTop: '8px' } },
             field('Starting coins', dCoins), field('Server slots', dServers),
-            field('RAM (MB)', dMem), field('CPU (%)', dCpu), field('Disk (MB)', dDisk), field('Backups', dBackups))),
+            field('RAM (MB)', dMem), field('CPU (%)', dCpu), field('Disk (MB)', dDisk), field('Backups', dBackups), field('Databases', dDatabases))),
         h('div', { class: 'card' },
           h('h3', { html: `${icon('sliders', 16)} Minimum per server` }),
           h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px', marginTop: '8px' } },
@@ -453,7 +499,7 @@
         h('div', { style: { display: 'grid', gap: '8px' } },
           shopRow('RAM', 'MB', shop.memory), shopRow('CPU', '%', shop.cpu),
           shopRow('Disk', 'MB', shop.disk), shopRow('Server Slot', 'slots', shop.servers),
-          shopRow('Backup Slot', 'slots', shop.backups))),
+          shopRow('Backup Slot', 'slots', shop.backups), shopRow('Database Slot', 'slots', shop.databases))),
       h('div', { style: { marginTop: '18px' } }, save)
     );
   }

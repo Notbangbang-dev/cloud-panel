@@ -83,6 +83,7 @@ router.patch('/users/:id', (req, res) => {
       disk: Math.max(0, Math.floor(Number(resources.disk ?? user.resources?.disk) || 0)),
       servers: Math.max(0, Math.floor(Number(resources.servers ?? user.resources?.servers) || 0)),
       backups: Math.max(0, Math.floor(Number(resources.backups ?? user.resources?.backups) || 0)),
+      databases: Math.max(0, Math.floor(Number(resources.databases ?? user.resources?.databases) || 0)),
     };
   }
   res.json({ data: auth.publicUser(db.update('users', user.id, patch)) });
@@ -383,7 +384,11 @@ router.post('/servers', (req, res) => {
       cpu: Number(b.cpu) || 100,
       io: 500,
     },
-    featureLimits: { databases: 5, backups: 5, allocations: 5 },
+    featureLimits: {
+      databases: Math.max(0, Math.floor(Number((b.featureLimits && b.featureLimits.databases) ?? 1))),
+      backups: Math.max(0, Math.floor(Number((b.featureLimits && b.featureLimits.backups) ?? 1))),
+      allocations: Math.max(0, Math.floor(Number((b.featureLimits && b.featureLimits.allocations) ?? 5))),
+    },
     environment: {
       ...(egg.variables || []).reduce((acc, v) => {
         acc[v.env] = v.default;

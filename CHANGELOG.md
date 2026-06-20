@@ -4,6 +4,41 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0-beta] — 2026-06-20
+
+> **v2 beta.** The economy gets real, self-service resource management. v2 proper
+> will bring much more (and proper balancing) — this is the foundation.
+
+### 🚀 Added — self-service resources & a databases economy
+
+- **Edit your own server's resources** — a new **Settings → Resources** panel lets
+  owners change **RAM, CPU, disk, backups and databases** per server, bounded by
+  their account quota (you can raise a value up to *free quota + what this server
+  already uses*, and never below what's already in use). New
+  `PUT /servers/:id/build` endpoint (owner/admin; admins aren't quota-bound).
+- **Databases store item** — buy **database slots** in the Shop, just like RAM or
+  backups. New servers now default to **1 database** (was 5).
+- **Quota-backed feature limits** — backups **and** databases are now drawn from
+  your account quota (the sum of each server's allocations). Creating a backup is
+  bounded by that **server's** backup limit (classic Pterodactyl behaviour);
+  databases by the server's database limit.
+- **Dashboard** now shows a **Databases** quota tile alongside Backups.
+
+### 🛠️ Admin console
+
+- **Edit any server's resources** — a new ✏️ action on Admin → Servers opens a
+  resource/feature-limit editor (RAM/CPU/disk + databases/backups/allocations),
+  not bound by the owner's quota.
+- **New-user defaults** and the **Shop** editor gained a **Databases** field;
+  per-user **Databases quota** is editable on the user editor; the admin
+  create-server form takes **Databases/Backups** feature limits.
+
+### 🔧 Notes
+
+- Migrations are additive: existing users get a `databases` quota that covers
+  what their servers already allocate (no negative balances); new servers default
+  to 1 database / 1 backup, allocated from the owner's quota.
+
 ## [1.9.1] — 2026-06-20
 
 ### 🐛 Fixed — Metrics tab rendering

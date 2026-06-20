@@ -106,6 +106,7 @@ router.get('/account/resources', (req, res) => {
         disk: quota.disk - used.disk,
         servers: quota.servers - used.servers,
         backups: quota.backups - used.backups,
+        databases: quota.databases - used.databases,
       },
       economyEnabled: settings.economyEnabled(),
     },
@@ -339,12 +340,12 @@ router.get('/servers/:id/backups', loadServer, requirePerm('backup'), (req, res)
 });
 
 router.post('/servers/:id/backups', loadServer, requirePerm('backup'), activeRequired, (req, res) => {
-  // Quota counts against the server owner (admins bypass).
-  if (!req.user.admin) {
-    const owner = db.get('users', req.server.ownerId) || req.user;
-    if (serversSvc.availableResources(owner).backups < 1)
-      return res.status(403).json({ error: 'No backup slots left — buy more in the shop or delete an old backup.' });
-  }
+  // Each server can hold up to its featureLimits.backups (allocated from the
+  // owner's quota in Settings → Resources).
+  const cap = (req.server.featureLimits && req.server.featureLimits.backups) || 0;
+  const have = backups.list(req.server.id).length;
+  if (have >= cap)
+    return res.status(403).json({ error: `Backup limit reached for this server (${cap}). Raise it in Settings → Resources, or buy more backup slots in the shop.` });
   let rec;
   try { rec = backups.create(req.server, { name: (req.body || {}).name, createdBy: req.user.id }); }
   catch (err) { return res.status(500).json({ error: err.message }); }
@@ -463,6 +464,50 @@ router.post('/servers/:id/settings/rename', loadServer, requirePerm('settings'),
   if (name && name.trim()) patch.name = name.trim();
   if (typeof description === 'string') patch.description = description;
   const updated = db.update('servers', req.server.id, patch);
+  res.json({ data: serializeServer(updated, { detail: true, user: req.user }) });
+});
+
+// Edit this server's resources (RAM/CPU/disk) and feature limits (backups,
+// databases) within the owner's quota. Owners (and admins) only — admins are
+// not bound by the quota. Each value can grow up to (free quota + what this
+// server already uses), and can't drop below what's already in use.
+router.put('/servers/:id/build', loadServer, requireOwner, (req, res) => {
+  const b = req.body || {};
+  const lim = db.settings().limits;
+  const owner = db.get('users', req.server.ownerId) || req.user;
+  const isAdmin = !!req.user.admin;
+  const avail = serversSvc.availableResources(owner); // free quota (excludes this edit)
+  const curL = req.server.limits || {};
+  const curF = req.server.featureLimits || {};
+
+  const usedBackups = backups.list(req.server.id).length;
+  const usedDatabases = databases.countForServer(req.server.id);
+
+  const errors = [];
+  // key, current allocation on this server, minimum, friendly label, optional floor (already-in-use)
+  function resolve(key, cur, min, label, inUse) {
+    if (b[key] === undefined || b[key] === null || b[key] === '') return cur;
+    let v = Math.floor(Number(b[key]));
+    if (!Number.isFinite(v)) { errors.push(`${label} is not a number`); return cur; }
+    if (v < min) { errors.push(`${label} must be at least ${min}`); return cur; }
+    if (inUse !== undefined && v < inUse) { errors.push(`${label} can't be below what's in use (${inUse})`); return cur; }
+    if (!isAdmin && v > avail[key] + cur) { errors.push(`Not enough ${label} quota (max ${Math.max(min, avail[key] + cur)})`); return cur; }
+    return v;
+  }
+
+  const memory = resolve('memory', curL.memory || 0, lim.minMemory, 'RAM');
+  const cpu = resolve('cpu', curL.cpu || 0, lim.minCpu, 'CPU');
+  const disk = resolve('disk', curL.disk || 0, lim.minDisk, 'Disk');
+  const backupsLim = resolve('backups', curF.backups || 0, 0, 'Backups', usedBackups);
+  const databasesLim = resolve('databases', curF.databases || 0, 0, 'Databases', usedDatabases);
+
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const updated = db.update('servers', req.server.id, {
+    limits: { ...curL, memory, cpu, disk },
+    featureLimits: { ...curF, backups: backupsLim, databases: databasesLim },
+  });
+  db.log({ type: 'server', userId: req.user.id, serverId: req.server.id, message: `Resources updated (${memory}MB RAM, ${cpu}% CPU, ${disk}MB disk, ${backupsLim} backups, ${databasesLim} databases)` });
   res.json({ data: serializeServer(updated, { detail: true, user: req.user }) });
 });
 
