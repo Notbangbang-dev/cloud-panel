@@ -4,6 +4,22 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] — 2026-06-20
+
+### ✨ Added — More server types (eggs)
+The egg catalog grows from **11 → 19**. New templates appear automatically on
+upgrade (`ensureEggs` is additive).
+
+- **Auto-installing** (downloaded for you):
+  - **BungeeCord** — the classic Minecraft proxy (latest build).
+  - **Geyser (Bedrock Bridge)** — standalone proxy that lets Minecraft: Bedrock
+    players join a Java server.
+- **Upload-your-files** templates with sensible startup commands:
+  - **Minecraft: Forge** and **Minecraft: NeoForge** (modded)
+  - **Minecraft: Spigot** (plugins) and **Sponge (SpongeVanilla)**
+  - **Minecraft: Bedrock Edition**
+  - **Terraria**
+
 ## [1.7.0] — 2026-06-19
 
 ### ✨ Added — Discord login (OAuth2)

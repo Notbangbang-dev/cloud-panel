@@ -152,7 +152,21 @@ async function fabric({ dir, vars, log }) {
   log('Fabric installation complete (libraries download on first start).');
 }
 
-const INSTALLERS = { paper, folia, purpur, vanilla, fabric, velocity, waterfall };
+/* ---- BungeeCord (direct jar) -------------------------------------------- */
+async function bungeecord({ dir, log }) {
+  log('Downloading the latest BungeeCord build…');
+  await download('https://ci.md-5.net/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar', path.join(dir, 'server.jar'), log);
+  log('BungeeCord installed. config.yml is generated on first start.');
+}
+
+/* ---- Geyser (standalone, direct download) ------------------------------- */
+async function geyser({ dir, log }) {
+  log('Downloading the latest Geyser standalone…');
+  await download('https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/standalone', path.join(dir, 'server.jar'), log);
+  log('Geyser installed. Edit config.yml after first start to point it at your Java server.');
+}
+
+const INSTALLERS = { paper, folia, purpur, vanilla, fabric, velocity, waterfall, bungeecord, geyser };
 
 module.exports = {
   has: (name) => Boolean(INSTALLERS[name]),

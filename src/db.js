@@ -374,6 +374,54 @@ function eggCatalog() {
       docker: 'python:3', startup: 'python {{PY_FILE}}', stopCommand: '^C',
       variables: [{ name: 'Entry file', env: 'PY_FILE', default: 'bot.py', userEditable: true }],
     },
+    {
+      name: 'BungeeCord', category: 'Minecraft: Proxy', installer: 'bungeecord',
+      description: 'Classic Minecraft proxy that links multiple servers into one network. Downloads the latest BungeeCord build; config.yml is generated on first start.',
+      docker: MC_DOCKER, startup: PROXY_START, stopCommand: 'end',
+      variables: [],
+    },
+    {
+      name: 'Geyser (Bedrock Bridge)', category: 'Minecraft: Proxy', installer: 'geyser',
+      description: 'Standalone Geyser proxy — lets Minecraft: Bedrock players join a Java server. Downloads the latest Geyser; edit config.yml to point it at your Java server.',
+      docker: MC_DOCKER, startup: PROXY_START, stopCommand: 'stop',
+      variables: [],
+    },
+    {
+      name: 'Minecraft: Forge', category: 'Minecraft: Java', installer: 'none',
+      description: 'Modded Minecraft (Forge). Upload your Forge server files via SFTP, set the run jar (or edit the startup for modern Forge run args), and start. Accept the EULA in eula.txt.',
+      docker: MC_DOCKER, startup: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui', stopCommand: 'stop',
+      variables: [{ name: 'Server jar', env: 'SERVER_JARFILE', default: 'server.jar', userEditable: true }],
+    },
+    {
+      name: 'Minecraft: NeoForge', category: 'Minecraft: Java', installer: 'none',
+      description: 'Modded Minecraft (NeoForge). Upload your NeoForge server files via SFTP, set the run jar (or edit the startup for run args), and start. Accept the EULA in eula.txt.',
+      docker: MC_DOCKER, startup: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui', stopCommand: 'stop',
+      variables: [{ name: 'Server jar', env: 'SERVER_JARFILE', default: 'server.jar', userEditable: true }],
+    },
+    {
+      name: 'Minecraft: Spigot', category: 'Minecraft: Java', installer: 'none',
+      description: 'Spigot / CraftBukkit (plugins). Build with BuildTools and upload the result as server.jar via SFTP, then start. Accept the EULA in eula.txt.',
+      docker: MC_DOCKER, startup: MC_START, stopCommand: 'stop',
+      variables: [],
+    },
+    {
+      name: 'Sponge (SpongeVanilla)', category: 'Minecraft: Java', installer: 'none',
+      description: 'SpongeVanilla modding platform. Download SpongeVanilla, upload it as server.jar via SFTP, and start. Accept the EULA in eula.txt.',
+      docker: MC_DOCKER, startup: MC_START, stopCommand: 'stop',
+      variables: [],
+    },
+    {
+      name: 'Minecraft: Bedrock Edition', category: 'Minecraft: Bedrock', installer: 'none',
+      description: 'Official Bedrock Dedicated Server. Download it from minecraft.net, upload the files via SFTP, and start. (Linux host.)',
+      docker: 'ubuntu:22.04', startup: './bedrock_server', stopCommand: 'stop',
+      variables: [{ name: 'Library path', env: 'LD_LIBRARY_PATH', default: '.', userEditable: false }],
+    },
+    {
+      name: 'Terraria', category: 'Terraria', installer: 'none',
+      description: 'Terraria dedicated server. Download the server from terraria.org, upload the files via SFTP, set the binary name, and start.',
+      docker: 'ubuntu:22.04', startup: './{{SERVER_BINARY}}', stopCommand: 'exit',
+      variables: [{ name: 'Server binary', env: 'SERVER_BINARY', default: 'TerrariaServer.bin.x86_64', userEditable: true }],
+    },
   ];
 }
 
