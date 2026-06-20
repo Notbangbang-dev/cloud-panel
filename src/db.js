@@ -556,7 +556,7 @@ function migrateUsers() {
       // v2: backups & databases are now drawn from the account quota (sum of
       // per-server featureLimits). Backfill the databases quota and make sure
       // both quotas cover what existing servers already allocate (no negatives).
-      const owned = backend.filter('servers', (s) => s.ownerId === u.id);
+      const owned = backend.all('servers').filter((s) => s.ownerId === u.id);
       const allocBackups = owned.reduce((a, s) => a + ((s.featureLimits && s.featureLimits.backups) || 0), 0);
       const allocDbs = owned.reduce((a, s) => a + ((s.featureLimits && s.featureLimits.databases) || 0), 0);
       patch.resources = {

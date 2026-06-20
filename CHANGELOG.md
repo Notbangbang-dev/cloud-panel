@@ -4,6 +4,17 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0-beta.1] — 2026-06-20
+
+### 🐛 Fixed — boot crash on upgrade (hotfix)
+
+- Fixed a startup crash (`TypeError: backend.filter is not a function`) introduced
+  in `2.0.0-beta`. The new v2 quota migration called an internal helper that only
+  exists on the public DB wrapper, not the raw storage backend — so any install
+  **with existing users** would `exit(1)` on boot and systemd would restart-loop.
+  It now uses `backend.all('servers').filter(...)`. Verified against a simulated
+  pre-v2 install (existing user missing the new `databases` quota).
+
 ## [2.0.0-beta] — 2026-06-20
 
 > **v2 beta.** The economy gets real, self-service resource management. v2 proper
