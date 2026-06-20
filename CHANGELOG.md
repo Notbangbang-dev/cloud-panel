@@ -189,7 +189,7 @@ restyle the entire panel — no code, no restarts.
   inside the stylesheet context. Uploads are admin-only and restricted to
   image/gif/video types (≤ 40 MB).
 
-## [1.3.2]
+## [1.3.2] — 2026-06-18
 
 ### 📜 Added — Legal
 - **Terms of Service** and **Privacy Policy**, available on the website
@@ -199,7 +199,7 @@ restyle the entire panel — no code, no restarts.
   and how data is handled. No tracking cookies — only your login token is stored
   locally.
 
-## [1.3.1]
+## [1.3.1] — 2026-06-18
 
 ### ⚡ Added — One-command updates
 - `sudo cloud-panel-update` — update to the latest version in one command. Keeps
@@ -212,7 +212,7 @@ restyle the entire panel — no code, no restarts.
   pulls.
 - First-time bootstrap: `cd ~/cloud-panel && git pull && sudo bash scripts/update.sh`.
 
-## [1.3.0]
+## [1.3.0] — 2026-06-18
 
 ### 💾 Added — Backups
 - New **Backups** tab on every server — snapshot files in one click, then
@@ -226,7 +226,7 @@ restyle the entire panel — no code, no restarts.
 ### 🔒 Security
 - Backups and restores stay locked inside each server's own files.
 
-## [1.2.0]
+## [1.2.0] — 2026-06-18
 
 ### 📁 Added — File uploads
 - Upload one or many files at once, or whole **folders** (full structure
@@ -239,7 +239,7 @@ restyle the entire panel — no code, no restarts.
 - Safe extraction blocks "zip-slip" path escapes; all uploads and extractions
   stay inside the server's own files.
 
-## [1.1.0]
+## [1.1.0] — 2026-06-18
 
 ### 🌙 Added — AFK rewards
 - New **AFK** page — earn coins just by keeping it open (default **+1 coin /
@@ -255,7 +255,7 @@ restyle the entire panel — no code, no restarts.
 ### 🐛 Fixed
 - Squashed a settings bug and general stability tweaks.
 
-## [1.0.0]
+## [1.0.0] — 2026-06-18
 
 ### 🎉 Initial release
 A full game-server panel **plus** a Discord bot.
