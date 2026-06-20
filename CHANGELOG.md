@@ -4,6 +4,20 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] — 2026-06-20
+
+### 🐛 Fixed — Metrics tab rendering
+
+- **Summary tiles no longer clip** — the Uptime / Peak CPU / Peak RAM / Samples
+  tiles now have a guaranteed minimum height, so their values can't be cut off.
+- **Real graphs that actually draw** — replaced the stretched sparkline canvases
+  with a self-sizing area chart (gridlines + DPR-aware) that scales CPU to 100%
+  and memory to the server's RAM limit, handles a single data point, and redraws
+  on window resize.
+- **Clear empty state** — fresh servers (or a just-restarted panel) now show
+  *"No data yet — metrics are recorded every minute"* instead of blank boxes,
+  since history is sampled once a minute.
+
 ## [1.9.0] — 2026-06-20
 
 ### 🚀 Added — the biggest feature drop yet (10 major features)

@@ -1103,11 +1103,13 @@
   /* ============================ METRICS ============================ */
   function tabMetrics(S, root) {
     let range = 86400;
-    const summary = h('div', { class: 'grid stat-grid', style: { marginBottom: '16px' } });
-    const cpuCanvas = h('canvas', { style: { width: '100%', height: '160px' } });
-    const memCanvas = h('canvas', { style: { width: '100%', height: '160px' } });
-    const cpuCard = h('div', { class: 'card' }, h('h3', { html: `${icon('cpu', 15)} CPU load (%)` }), cpuCanvas);
-    const memCard = h('div', { class: 'card', style: { marginTop: '16px' } }, h('h3', { html: `${icon('drive', 15)} Memory` }), memCanvas);
+    let pts = [];
+    const EMPTY = 'No data yet — metrics are recorded every minute';
+    const summary = h('div', { class: 'grid stat-grid metrics-summary', style: { marginBottom: '16px' } });
+    const cpuCanvas = h('canvas');
+    const memCanvas = h('canvas');
+    const cpuCard = h('div', { class: 'card' }, h('h3', { html: `${icon('cpu', 15)} CPU load (%)` }), h('div', { class: 'chart-box' }, cpuCanvas));
+    const memCard = h('div', { class: 'card', style: { marginTop: '16px' } }, h('h3', { html: `${icon('drive', 15)} Memory` }), h('div', { class: 'chart-box' }, memCanvas));
 
     const ranges = [['1h', 3600], ['6h', 21600], ['24h', 86400], ['7d', 604800]];
     const rangeBtns = h('div', { class: 'grad-quick', style: { gap: '6px' } });
@@ -1117,21 +1119,25 @@
     }
     renderRangeBtns();
 
+    const memLimitBytes = (S.server.limits && S.server.limits.memory ? S.server.limits.memory : 0) * 1048576;
+    function draw() {
+      CP.areaChart(cpuCanvas, pts, { color: '#22d3ee', max: 100, value: (p) => p.cpu || 0, empty: EMPTY, fmtMax: (v) => Math.round(v) + '%' });
+      CP.areaChart(memCanvas, pts, { color: '#a855f7', max: memLimitBytes || undefined, value: (p) => p.mem || 0, empty: EMPTY, fmtMax: (v) => fmt.bytes(v) });
+    }
+
     async function load() {
       try {
         const res = await CP.api.serverMetrics(S.server.id, range);
-        const pts = res.data || [];
+        pts = res.data || [];
         const sm = res.summary || {};
         CP.clear(summary);
-        const tile = (ic, k, v) => h('div', { class: 'card tile' }, h('div', { class: 'k', html: `${icon(ic, 15)} ${k}` }), h('div', { class: 'v', html: v }));
+        const tile = (ic, k, v) => h('div', { class: 'card tile res-tile' }, h('div', { class: 'k', html: `${icon(ic, 15)} ${k}` }), h('div', { class: 'v', html: v }));
         summary.append(
           tile('activity', 'Uptime', sm.uptimePercent == null ? '—' : `${sm.uptimePercent}<small>%</small>`),
           tile('cpu', 'Peak CPU', `${(sm.peakCpu || 0).toFixed(0)}<small>%</small>`),
           tile('drive', 'Peak RAM', fmt.bytes(sm.peakMem || 0)),
           tile('clock', 'Samples', String(sm.samples || 0)));
-        CP.sparkline(cpuCanvas, pts.map((p) => p.cpu || 0), '#22d3ee');
-        CP.sparkline(memCanvas, pts.map((p) => (p.mem || 0) / 1048576), '#a855f7');
-        if (!pts.length) { cpuCanvas.getContext('2d').clearRect(0, 0, cpuCanvas.width, cpuCanvas.height); }
+        requestAnimationFrame(draw);
       } catch (err) { CP.ui.toast(err.message, 'err'); }
     }
 
@@ -1144,7 +1150,9 @@
     );
     load();
     const timer = setInterval(load, 60000);
-    S.onTabCleanup(() => clearInterval(timer));
+    const onResize = () => draw();
+    window.addEventListener('resize', onResize);
+    S.onTabCleanup(() => { clearInterval(timer); window.removeEventListener('resize', onResize); });
   }
 
   /* ============================ SUBUSERS ============================ */

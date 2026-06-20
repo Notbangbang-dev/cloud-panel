@@ -269,6 +269,12 @@ select option { background: var(--surface-solid); }
 .tile .v small { font-size: 13px; color: var(--muted); font-weight: 600; }
 .tile canvas { width: 100%; height: 40px; margin-top: 2px; }
 
+/* Metrics tab — guarantee tiles never clip their value, and give charts a real box */
+.metrics-summary .tile { min-height: 96px; justify-content: center; }
+.metrics-summary .tile .v { line-height: 1.15; }
+.chart-box { position: relative; height: 180px; margin-top: 4px; }
+.chart-box canvas { display: block; width: 100%; height: 100%; }
+
 /* ============================================================
    Server detail
    ============================================================ */

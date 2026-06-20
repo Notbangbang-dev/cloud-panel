@@ -170,6 +170,58 @@
     ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
   };
 
+  /* ---- Area chart (historical metrics) ---- */
+  CP.areaChart = function (canvas, points, opts) {
+    opts = opts || {};
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(2, Math.round(rect.width || canvas.clientWidth || 600));
+    const hgt = Math.max(2, Math.round(rect.height || canvas.clientHeight || 170));
+    canvas.width = w * dpr; canvas.height = hgt * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, hgt);
+
+    const padL = 8, padR = 10, padT = 12, padB = 14;
+    const innerH = hgt - padT - padB, innerW = w - padL - padR;
+    const color = opts.color || '#22d3ee';
+
+    // gridlines
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+    for (let i = 0; i <= 3; i++) { const gy = padT + innerH * i / 3; ctx.beginPath(); ctx.moveTo(padL, gy); ctx.lineTo(w - padR, gy); ctx.stroke(); }
+
+    const vals = (points || []).map((p) => (opts.value ? opts.value(p) : p)).filter((v) => typeof v === 'number' && !isNaN(v));
+    if (!vals.length) {
+      ctx.fillStyle = 'rgba(160,170,200,0.55)';
+      ctx.font = '13px system-ui, -apple-system, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(opts.empty || 'No data yet', w / 2, hgt / 2);
+      return;
+    }
+    const max = opts.max != null ? opts.max : Math.max(...vals, 1);
+    const range = max || 1;
+    const X = (i) => padL + (vals.length === 1 ? innerW / 2 : innerW * i / (vals.length - 1));
+    const Y = (v) => padT + innerH - Math.max(0, Math.min(1, v / range)) * innerH;
+
+    const grad = ctx.createLinearGradient(0, padT, 0, hgt - padB);
+    grad.addColorStop(0, color + '66'); grad.addColorStop(1, color + '05');
+    ctx.beginPath();
+    vals.forEach((v, i) => { const x = X(i), y = Y(v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.lineTo(X(vals.length - 1), hgt - padB); ctx.lineTo(X(0), hgt - padB); ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+
+    ctx.beginPath();
+    vals.forEach((v, i) => { const x = X(i), y = Y(v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+    if (vals.length === 1) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X(0), Y(vals[0]), 3, 0, Math.PI * 2); ctx.fill(); }
+
+    if (opts.fmtMax) {
+      ctx.fillStyle = 'rgba(170,180,205,0.7)'; ctx.font = '11px var(--mono, monospace)';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(opts.fmtMax(max), padL + 2, padT);
+    }
+  };
+
   /* ---- Toasts ---- */
   CP.ui = CP.ui || {};
   CP.ui.toast = function (message, type = 'info', ms = 3600) {
