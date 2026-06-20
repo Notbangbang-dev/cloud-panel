@@ -15,6 +15,7 @@
     { id: 'eggs', label: 'Eggs', icon: 'box' },
     { id: 'settings', label: 'Settings', icon: 'sliders' },
     { id: 'appearance', label: 'Appearance', icon: 'palette' },
+    { id: 'login', label: 'Login', icon: 'key' },
   ];
 
   /** Drop any unsaved live-preview and restore the saved theme. */
@@ -46,7 +47,7 @@
     function render() {
       removeAppearancePreview(); // leaving a tab discards an unsaved theme preview
       CP.clear(content);
-      ({ overview, servers, users, nodes, locations, allocations, eggs, settings, appearance: appearanceTab }[active])(content);
+      ({ overview, servers, users, nodes, locations, allocations, eggs, settings, appearance: appearanceTab, login: loginTab }[active])(content);
     }
     render();
   };
@@ -587,6 +588,64 @@
       )));
       root.appendChild(grid);
     } catch (err) { CP.clear(root); root.appendChild(CP.empty('alert', err.message)); }
+  }
+
+  /* ---------------- Login / Discord OAuth ---------------- */
+  async function loginTab(root) {
+    loading(root);
+    let s;
+    try { s = (await CP.api.adminSettings()).data; }
+    catch (e) { CP.clear(root); return root.appendChild(CP.empty('alert', e.message)); }
+    CP.clear(root);
+    const d = (s.oauth && s.oauth.discord) || {};
+    const callback = `${location.origin}/api/auth/discord/callback`;
+    const copyChip = (text) => h('span', { class: 'copy', html: `<span class="mono">${CP.esc(text)}</span> ${icon('copy', 13)}`, onclick: () => CP.copy(text) });
+
+    const enabled = h('input', { type: 'checkbox', class: 'switch' }); enabled.checked = !!d.enabled;
+    const createAcc = h('input', { type: 'checkbox', class: 'switch' }); createAcc.checked = d.createAccounts === undefined ? true : !!d.createAccounts;
+    const clientId = h('input', { value: d.clientId || '', placeholder: 'e.g. 123456789012345678' });
+    const clientSecret = h('input', { type: 'password', value: d.clientSecret || '', placeholder: 'Discord client secret', autocomplete: 'off' });
+    const redirectUri = h('input', { value: d.redirectUri || callback, placeholder: callback });
+
+    const save = h('button', { class: 'btn primary', html: `${icon('save', 15)} Save Discord login` });
+    save.onclick = async () => {
+      try {
+        await CP.api.adminUpdateSettings({ oauth: { discord: {
+          enabled: enabled.checked,
+          clientId: clientId.value.trim(),
+          clientSecret: clientSecret.value.trim(),
+          redirectUri: redirectUri.value.trim(),
+          createAccounts: createAcc.checked,
+        } } });
+        CP.ui.toast('Discord login saved', 'ok');
+      } catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
+
+    root.append(
+      h('div', { class: 'note', style: { marginBottom: '18px' }, html: `${icon('info', 15)} Let people sign in with Discord. You supply your <b>own</b> Discord application — credentials stay on your panel.` }),
+      h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(340px,1fr))' } },
+        h('div', { class: 'card' },
+          h('h3', { html: `${icon('key', 16)} Discord login` }),
+          h('div', { class: 'switch-row', style: { marginTop: '6px' } },
+            h('div', {}, h('b', {}, 'Enable Discord login'), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Adds a "Continue with Discord" button to the login page.')),
+            h('div', { style: { marginLeft: 'auto' } }, enabled)),
+          h('label', { class: 'field' }, h('span', {}, 'Client ID'), clientId),
+          h('label', { class: 'field' }, h('span', {}, 'Client Secret'), clientSecret),
+          h('label', { class: 'field' }, h('span', {}, 'Redirect URI'), redirectUri),
+          h('div', { class: 'switch-row' },
+            h('div', {}, h('b', {}, 'Allow new accounts via Discord'), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Off = only existing/linked accounts can use it.')),
+            h('div', { style: { marginLeft: 'auto' } }, createAcc)),
+          h('div', { style: { marginTop: '16px' } }, save)),
+        h('div', { class: 'card' },
+          h('h3', { html: `${icon('info', 16)} Setup` }),
+          h('ol', { class: 'muted', style: { fontSize: '13px', lineHeight: '1.8', paddingLeft: '18px', margin: '6px 0 0' } },
+            h('li', { html: 'Open <b>discord.com/developers/applications</b> → <b>New Application</b>.' }),
+            h('li', { html: '<b>OAuth2</b> → copy the <b>Client ID</b> + <b>Client Secret</b> into the fields.' }),
+            h('li', {}, 'Under OAuth2 → Redirects, add exactly this URL:'),
+            h('li', { style: { listStyle: 'none', margin: '6px 0' } }, copyChip(callback)),
+            h('li', { html: 'Keep the same URL in <b>Redirect URI</b>, toggle on, and Save.' })))
+      )
+    );
   }
 
   /* ---------------- Appearance / Theming ---------------- */

@@ -4,6 +4,30 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] — 2026-06-19
+
+### ✨ Added — Discord login (OAuth2)
+- Optional **"Continue with Discord"** sign-in, toggled and configured entirely
+  in **Admin → Login**. The operator supplies their **own** Discord application
+  (Client ID / Secret + Redirect URI) — nothing is shared or hardcoded.
+- Accounts link to Discord by ID, or to an existing account on a **verified**
+  email match (prevents takeover via unverified emails). New Discord sign-ups
+  can be allowed/blocked and follow your approval setting.
+- The session token is returned to the browser in the URL **hash** (not the
+  query string, so it isn't logged), and the OAuth `state` is a signed,
+  short-lived CSRF token.
+
+### 🔧 Notes
+- The panel must be able to reach `discord.com` outbound.
+- In your Discord app's OAuth2 settings, add the **Redirect URI** shown in
+  Admin → Login exactly (`…/api/auth/discord/callback`).
+
+## [1.6.1] — 2026-06-19
+
+### ✨ Added
+- The **Cloud Panel** logo/name in the sidebar is now a clickable shortcut back
+  to the **Dashboard** (also keyboard-accessible via Enter/Space).
+
 ## [1.6.0] — 2026-06-19
 
 ### 🔒 Added — Optional server-process isolation (mitigates audit finding C1)

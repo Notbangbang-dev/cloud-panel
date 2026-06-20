@@ -39,6 +39,21 @@
     },
 
     async start() {
+      // Discord OAuth redirect lands here with the session token in the URL
+      // hash (not the query string — hashes aren't sent to servers or logged).
+      try {
+        const hash = location.hash || '';
+        const tok = hash.match(/(?:^#|&)login_token=([^&]+)/);
+        const err = hash.match(/(?:^#|&)login_error=([^&]+)/);
+        if (tok) {
+          CP.api.token = decodeURIComponent(tok[1]);
+          history.replaceState({}, '', location.pathname + location.search);
+        } else if (err) {
+          history.replaceState({}, '', location.pathname + location.search);
+          setTimeout(() => CP.ui.toast(decodeURIComponent(err[1]), 'err', 6000), 200);
+        }
+      } catch {}
+
       try {
         const health = await fetch('/api/health').then((r) => r.json());
         if (health.ports) this.ports = health.ports;
@@ -148,7 +163,9 @@
       renderCoins();
 
       const sidebar = h('aside', { class: 'sidebar' },
-        h('div', { class: 'brand' },
+        h('div', { class: 'brand', style: { cursor: 'pointer' }, title: 'Go to Dashboard', role: 'button', tabindex: '0',
+          onclick: () => this.go('/'),
+          onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.go('/'); } } },
           h('img', { src: '/img/logo.svg', alt: '' }),
           h('div', {}, h('div', { class: 'name' }, this.brand.name), h('div', { class: 'tag' }, 'Control Panel'))),
         h('div', { class: 'nav-label' }, 'Navigation'),

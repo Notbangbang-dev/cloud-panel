@@ -33,6 +33,13 @@
 
     const brand = () => h('div', { class: 'auth-brand' }, h('img', { src: '/img/logo.svg', alt: '' }), h('div', {}, h('h1', {}, 'Cloud Panel')));
 
+    const DISCORD_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="vertical-align:-4px;margin-right:8px"><path d="M19.27 5.33A16.9 16.9 0 0 0 15.1 4l-.21.42c1.5.36 2.74.92 3.9 1.7a13.6 13.6 0 0 0-11.58 0c1.16-.78 2.4-1.34 3.9-1.7L10.9 4a16.9 16.9 0 0 0-4.17 1.33C3.5 9.36 2.6 13.3 3 17.18A17 17 0 0 0 8.2 19.8l.74-1.27c-.7-.26-1.34-.59-1.95-1l.16-.12a9.7 9.7 0 0 0 9.7 0l.16.12c-.6.41-1.25.74-1.95 1l.74 1.27a17 17 0 0 0 5.2-2.62c.46-4.43-.86-8.33-2.73-11.85zM9.3 14.94c-.82 0-1.5-.75-1.5-1.67 0-.92.66-1.67 1.5-1.67.83 0 1.5.76 1.5 1.67 0 .92-.67 1.67-1.5 1.67zm5.4 0c-.82 0-1.5-.75-1.5-1.67 0-.92.67-1.67 1.5-1.67.84 0 1.5.76 1.5 1.67 0 .92-.66 1.67-1.5 1.67z"/></svg>';
+    const discordBlock = () => cfg.discordEnabled
+      ? h('div', {},
+          h('div', { class: 'auth-or' }, h('span', {}, 'or')),
+          h('a', { class: 'btn block discord', href: '/api/auth/discord/login', html: DISCORD_SVG + 'Continue with Discord' }))
+      : null;
+
     function renderLogin() {
       card.onsubmit = doLogin;
       CP.clear(card);
@@ -48,6 +55,7 @@
         h('label', { class: 'field' }, h('span', {}, 'Username or email'), loginInput),
         h('label', { class: 'field' }, h('span', {}, 'Password'), passInput),
         btn,
+        discordBlock(),
         cfg.registrationEnabled
           ? h('div', { class: 'hint' }, h('span', {}, "Don't have an account? "),
               h('a', { class: 'auth-link', onclick: renderSignup }, 'Create one'))
@@ -92,6 +100,7 @@
         h('label', { class: 'field' }, h('span', {}, 'Password'), password),
         h('label', { class: 'field' }, h('span', {}, 'Confirm password'), confirm),
         btn,
+        discordBlock(),
         h('div', { class: 'hint' }, h('span', {}, 'Already have an account? '),
           h('a', { class: 'auth-link', onclick: renderLogin }, 'Sign in'))
       );

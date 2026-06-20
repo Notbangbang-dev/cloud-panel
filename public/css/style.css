@@ -501,6 +501,12 @@ input.switch:checked::after { left: 23px; }
 .auth-legal a { color: var(--muted); cursor: pointer; }
 .auth-legal a:hover { color: var(--cyan); }
 
+/* Discord login button + "or" divider */
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+.auth-or::before, .auth-or::after { content: ''; height: 1px; flex: 1; background: var(--border); }
+.btn.discord { background: #5865f2; color: #fff; border: none; }
+.btn.discord:hover { background: #4752c4; color: #fff; }
+
 /* ============================================================
    Appearance / theme editor (admin)
    ============================================================ */

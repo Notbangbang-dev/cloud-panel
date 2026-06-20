@@ -42,6 +42,11 @@ const SETTINGS_DEFAULTS = {
     brand: { name: '', tagline: '' },
     customCss: '',
   },
+  // Discord OAuth2 login — the operator supplies their own Discord app
+  // credentials in Admin → Login. Disabled until configured.
+  oauth: {
+    discord: { enabled: false, clientId: '', clientSecret: '', redirectUri: '', createAccounts: true },
+  },
 };
 
 function uid(prefix) {
@@ -419,6 +424,7 @@ function migrateUsers() {
     const patch = {};
     if (u.status === undefined) patch.status = 'active';
     if (u.tokenVersion === undefined) patch.tokenVersion = 0; // for token revocation
+    if (u.discordId === undefined) patch.discordId = null; // Discord OAuth link
     if (u.coins === undefined) patch.coins = d.coins;
     if (!u.resources || typeof u.resources !== 'object')
       patch.resources = { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers, backups: d.backups };

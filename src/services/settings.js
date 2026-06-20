@@ -11,6 +11,12 @@ const economyEnabled = () => !!get().economy.enabled;
 const registrationEnabled = () => !!get().registration.enabled;
 const requireApproval = () => !!get().registration.requireApproval;
 const afkEnabled = () => !!(get().afk && get().afk.enabled);
+const discord = () => (get().oauth && get().oauth.discord) || {};
+/** True only when Discord login is enabled AND fully configured. */
+const discordReady = () => {
+  const d = discord();
+  return !!(d.enabled && d.clientId && d.clientSecret && d.redirectUri);
+};
 
 function deepMerge(target, patch) {
   for (const k of Object.keys(patch)) {
@@ -39,6 +45,21 @@ function update(patch = {}) {
   // and fully validated/normalized by its own engine.
   if (patch.appearance !== undefined) cur.appearance = appearance.sanitize(patch.appearance);
 
+  // Discord OAuth config (replaced wholesale + sanitized).
+  if (patch.oauth !== undefined) {
+    const d = (patch.oauth && patch.oauth.discord) || {};
+    const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+    cur.oauth = {
+      discord: {
+        enabled: !!d.enabled,
+        clientId: str(d.clientId, 64),
+        clientSecret: str(d.clientSecret, 200),
+        redirectUri: str(d.redirectUri, 300),
+        createAccounts: d.createAccounts === undefined ? true : !!d.createAccounts,
+      },
+    };
+  }
+
   cur.economy.enabled = !!cur.economy.enabled;
   cur.registration.enabled = !!cur.registration.enabled;
   cur.registration.requireApproval = !!cur.registration.requireApproval;
@@ -60,4 +81,4 @@ function update(patch = {}) {
   return get();
 }
 
-module.exports = { get, defaults, economyEnabled, registrationEnabled, requireApproval, afkEnabled, update };
+module.exports = { get, defaults, economyEnabled, registrationEnabled, requireApproval, afkEnabled, discord, discordReady, update };

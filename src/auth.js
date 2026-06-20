@@ -41,6 +41,15 @@ function verifyTicket(token, scope) {
   return user;
 }
 
+/** Signed, short-lived CSRF state for the OAuth redirect flow. */
+function signState(payload = {}, ttlSeconds = 600) {
+  return jwt.sign({ ...payload, kind: 'oauth-state' }, config.jwtSecret, { expiresIn: ttlSeconds });
+}
+function verifyState(token) {
+  const p = token && verifyToken(token);
+  return p && p.kind === 'oauth-state' ? p : null;
+}
+
 function publicUser(user) {
   if (!user) return null;
   const { password, ...rest } = user;
@@ -89,6 +98,8 @@ function adminRequired(req, res, next) {
 module.exports = {
   sign,
   signTicket,
+  signState,
+  verifyState,
   verifyToken,
   verifyTicket,
   publicUser,
