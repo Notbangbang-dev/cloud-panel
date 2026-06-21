@@ -52,12 +52,15 @@
     function render(d) {
       CP.clear(card);
       const dotColor = d.status === 'running' ? 'var(--green, #4ade80)' : d.status === 'starting' || d.status === 'stopping' ? 'var(--amber, #fbbf24)' : '#8a97b4';
-      card.append(
+      const desc = d.description && d.description !== 'null' ? d.description : '';
+      // NOTE: native Element.append() stringifies null → "null", so build the
+      // list and filter out empty sections before appending.
+      const parts = [
         h('div', { class: 'auth-brand', style: { justifyContent: 'center' } },
           h('img', { src: '/img/logo.svg', alt: '' }), h('div', {}, h('h1', { style: { fontSize: '20px' } }, d.name))),
         h('div', { style: { textAlign: 'center', margin: '6px 0 18px' } },
           h('span', { class: 'status ' + d.status, html: `<span class="dot" style="background:${dotColor}"></span>${d.status}` })),
-        d.description ? h('p', { class: 'sub', style: { textAlign: 'center' } }, d.description) : null,
+        desc ? h('p', { class: 'sub', style: { textAlign: 'center' } }, desc) : null,
         h('dl', { class: 'kv' },
           d.egg ? h('dt', {}, 'Type') : null, d.egg ? h('dd', {}, d.egg) : null,
           d.address ? h('dt', {}, 'Address') : null, d.address ? h('dd', { class: 'mono' }, d.address) : null,
@@ -77,8 +80,9 @@
               CP.bar(`RAM · ${fmt.bytes(d.resources.memory)} / ${fmt.bytes(d.resources.memoryLimit)}`, d.resources.memory, d.resources.memoryLimit || 1, 'ram'))
           : null,
         h('div', { class: 'muted', style: { textAlign: 'center', fontSize: '11.5px', marginTop: '16px' } },
-          `Updated ${new Date(d.updatedAt).toLocaleTimeString()} · auto-refreshing`)
-      );
+          `Updated ${new Date(d.updatedAt).toLocaleTimeString()} · auto-refreshing`),
+      ];
+      card.append(...parts.filter((x) => x != null && x !== false));
     }
 
     async function tick() {
