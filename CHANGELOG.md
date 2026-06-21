@@ -4,6 +4,21 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.2] — 2026-06-21
+
+### ♻️ Changed — economy vs. paid plans
+Cleanly separated the two monetization styles:
+- **The coin economy is now free-mode only.** When billing is set to **Paid** or
+  **Paid + trial**, the entire economy (coins, shop, AFK earning, daily rewards
+  and pets) is automatically **disabled** — those features are for the free,
+  coin-based model. (`economyEnabled()` now requires `billing.mode === 'free'`.)
+- **Plans grant quota only.** Removed the per-plan "bonus coins" — a paid/trial
+  plan now grants exactly its **resource quota** (RAM/CPU/disk/servers/backups/
+  databases) and nothing else. The coins field is gone from the plan editor and
+  plan cards.
+- Achievements & XP are unaffected (they're not coin-based) and still work in any
+  mode.
+
 ## [2.3.1] — 2026-06-21
 
 ### 🔒 Added — Plan paywall (not bypassable)

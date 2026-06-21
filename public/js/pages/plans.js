@@ -69,7 +69,8 @@
           resLine('CPU', p.resources.cpu ? p.resources.cpu + '%' : null),
           resLine('Disk', p.resources.disk ? mib(p.resources.disk) : null),
           resLine('Servers', p.resources.servers || null),
-          p.coins ? h('div', { class: 'muted', style: { fontSize: '12.5px' } }, `+${p.coins} coins`) : null),
+          resLine('Backups', p.resources.backups || null),
+          resLine('Databases', p.resources.databases || null)),
         (p.features || []).length
           ? h('div', { style: { margin: '4px 0 12px' } }, ...p.features.map((f) => h('div', { style: { fontSize: '12.5px', display: 'flex', gap: '6px', alignItems: 'center' } }, h('span', { html: icon('check', 12), style: { color: 'var(--green)' } }), f)))
           : null,

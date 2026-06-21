@@ -653,7 +653,6 @@
     const desc = h('input', { value: plan ? (plan.description || '') : '', placeholder: 'Great for growing communities' });
     const price = h('input', { type: 'number', step: '0.01', min: '0', value: plan ? (plan.price / 100) : 0 });
     const interval = (() => { const s = h('select', {}, ...[['month', 'Monthly'], ['year', 'Yearly'], ['one_time', 'One-time']].map((o) => h('option', { value: o[0] }, o[1]))); s.value = plan ? plan.interval : 'month'; return s; })();
-    const coins = h('input', { type: 'number', min: '0', value: plan ? (plan.coins || 0) : 0 });
     const R = (k) => h('input', { type: 'number', min: '0', value: plan ? (plan.resources[k] || 0) : 0 });
     const mem = R('memory'), cpu = R('cpu'), disk = R('disk'), servers = R('servers'), backups = R('backups'), databases = R('databases');
     const feats = h('textarea', { rows: '3', style: { width: '100%', resize: 'vertical' } }); feats.value = plan ? (plan.features || []).join('\n') : '';
@@ -666,8 +665,8 @@
       body: h('div', {},
         h('div', { class: 'grid', style: { gridTemplateColumns: '2fr 1fr', gap: '0 12px' } }, field('Name', name), field(`Price (${(c.currency || 'usd').toUpperCase()})`, price)),
         field('Description', desc),
-        h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px' } }, field('Billing interval', interval), field('Bonus coins', coins)),
-        h('div', { class: 'section-title', style: { margin: '14px 0 6px' } }, 'Resource grant'),
+        field('Billing interval', interval),
+        h('div', { class: 'section-title', style: { margin: '14px 0 6px' } }, 'Resource grant (quota)'),
         h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(3,1fr)', gap: '0 12px' } }, field('RAM (MB)', mem), field('CPU (%)', cpu), field('Disk (MB)', disk), field('Servers', servers), field('Backups', backups), field('Databases', databases)),
         field('Features (one per line)', feats),
         h('div', { style: { display: 'flex', gap: '22px', marginTop: '12px' } },
@@ -677,7 +676,7 @@
     });
     save.onclick = async () => {
       const body = {
-        name: name.value, description: desc.value, price: Math.round(parseFloat(price.value || '0') * 100), interval: interval.value, coins: +coins.value,
+        name: name.value, description: desc.value, price: Math.round(parseFloat(price.value || '0') * 100), interval: interval.value,
         resources: { memory: +mem.value, cpu: +cpu.value, disk: +disk.value, servers: +servers.value, backups: +backups.value, databases: +databases.value },
         features: feats.value.split('\n').map((s) => s.trim()).filter(Boolean), featured: featured.checked, active: active.checked,
       };

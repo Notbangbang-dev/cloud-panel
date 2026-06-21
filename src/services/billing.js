@@ -82,8 +82,7 @@ function sanitizePlan(input, existing) {
     description: String(b.description != null ? b.description : e.description || '').slice(0, 240),
     price: Math.max(0, Math.round(Number(b.price != null ? b.price : e.price) || 0)), // minor units (cents)
     interval,
-    coins: Math.max(0, Math.floor(Number(b.coins != null ? b.coins : e.coins) || 0)),
-    resources: res,
+    resources: res, // plans grant quota only — no coins (coins are a free-mode thing)
     features,
     featured: b.featured === undefined ? !!e.featured : !!b.featured,
     active: b.active === undefined ? (e.active !== false) : !!b.active,
@@ -142,7 +141,6 @@ function applyPlan(user, plan, status, extra = {}) {
   const patch = { plan: plan ? plan.id : null, planStatus: status, planSince: new Date().toISOString(), ...extra };
   if (plan && (status === 'active' || status === 'trialing')) {
     patch.resources = { ...(user.resources || {}), ...plan.resources };
-    if (plan.coins) patch.coins = (user.coins || 0) + plan.coins;
   }
   return db.update('users', user.id, patch);
 }

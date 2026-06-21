@@ -7,7 +7,14 @@ const appearance = require('./appearance');
 
 const get = () => db.settings();
 const defaults = () => get().defaults;
-const economyEnabled = () => !!get().economy.enabled;
+// The coin economy (shop, AFK, daily rewards, pets, balances) is a FREE-mode
+// feature only. In paid / trial billing modes, plans grant quota instead — so
+// the economy is force-disabled regardless of the economy toggle.
+const economyEnabled = () => {
+  const s = get();
+  const mode = (s.billing && s.billing.mode) || 'free';
+  return !!(s.economy && s.economy.enabled) && mode === 'free';
+};
 const registrationEnabled = () => !!get().registration.enabled;
 const requireApproval = () => !!get().registration.requireApproval;
 const afkEnabled = () => !!(get().afk && get().afk.enabled);
