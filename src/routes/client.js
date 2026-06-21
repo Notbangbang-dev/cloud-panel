@@ -139,6 +139,11 @@ router.get('/account/resources', (req, res) => {
 });
 
 router.post('/servers', activeRequired, (req, res) => {
+  // Paywall: in paid / trial mode, a member must hold an active plan (or trial)
+  // before deploying any server. Enforced here so it can't be bypassed via the API.
+  if (billing.requiresPlan(req.user)) {
+    return res.status(402).json({ error: 'Choose a plan to start deploying servers.', needsPlan: true });
+  }
   const b = req.body || {};
   const lim = db.settings().limits;
   const memory = Math.floor(Number(b.memory) || 0);

@@ -19,6 +19,7 @@
     petsEnabled: false,
     bragCardsEnabled: false,
     billing: null,
+    needsPlan: false,
     banner: null,
     maintenance: null,
     dailyReward: null,
@@ -93,6 +94,7 @@
           this.petsEnabled = !!me.petsEnabled;
           this.bragCardsEnabled = !!me.bragCardsEnabled;
           this.billing = me.billing || null;
+          this.needsPlan = !!me.needsPlan;
           this.dailyReward = me.dailyReward || null;
           if (me.banner) this.banner = me.banner;
           if (me.maintenance) this.maintenance = me.maintenance;
@@ -168,6 +170,13 @@
       if (!this.user.admin && (this.user.status === 'pending' || this.user.status === 'declined') && CP.pages.pending) {
         this.shell = null;
         CP.pages.pending(appRoot);
+        return;
+      }
+
+      // Paywall — members must hold a plan (or trial) before using the panel.
+      if (this.needsPlan && CP.pages.paywall) {
+        this.shell = null;
+        CP.pages.paywall(appRoot);
         return;
       }
 

@@ -43,6 +43,18 @@ function paymentsReady() {
   return c.stripe.enabled && /^sk_/.test(c.stripe.secretKey);
 }
 
+/**
+ * True when this user must pick a plan before they can use the panel.
+ * Admins are always exempt (they configure billing/plans). Only applies in
+ * 'paid' / 'trial' modes when the user has no active or trialing plan.
+ */
+function requiresPlan(user) {
+  if (!user || user.admin) return false;
+  const c = cfg();
+  if (c.mode !== 'paid' && c.mode !== 'trial') return false;
+  return !['active', 'trialing'].includes(user.planStatus);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Plans (admin-defined)                                                       */
 /* -------------------------------------------------------------------------- */
@@ -281,7 +293,7 @@ function handleWebhook(rawBody, sig) {
 }
 
 module.exports = {
-  cfg, publicConfig, adminConfig, userPlan, paymentsReady,
+  cfg, publicConfig, adminConfig, userPlan, paymentsReady, requiresPlan,
   plans, getPlan, createPlan, updatePlan, removePlan,
   applyPlan, cancelPlan, selectFreePlan, startTrial,
   createCheckout, confirmCheckout, verifyWebhook, handleWebhook,

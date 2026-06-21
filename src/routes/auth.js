@@ -218,6 +218,7 @@ router.get('/me', auth.authRequired, (req, res) => {
     petsEnabled: settings.economyEnabled() && !!(s.pets && s.pets.enabled),
     bragCardsEnabled: !!(s.bragCards && s.bragCards.enabled),
     billing: billing.publicConfig(),
+    needsPlan: billing.requiresPlan(req.user),
     banner: publicBanner(),
     maintenance: publicMaintenance(),
   });

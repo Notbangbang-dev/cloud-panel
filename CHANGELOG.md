@@ -4,6 +4,23 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] — 2026-06-21
+
+### 🔒 Added — Plan paywall (not bypassable)
+When billing is in **Paid** or **Paid + trial** mode, members must hold an active
+plan (or trial) before they can use the panel:
+- On login, members **without** a plan hit a full-screen **"Choose a plan"** gate
+  (no sidebar) showing your plans — with a **"Start free trial"** button when the
+  mode is trial. They can't navigate the panel until they pick one (only "Sign
+  out" is available).
+- **Server-side enforced too** — `POST /api/servers` now returns **402** for a
+  member without a plan, so the gate can't be bypassed by calling the API
+  directly. (`/api/auth/me` exposes `needsPlan`.)
+- **Admins are exempt** (so they can still configure billing/plans), and **Free**
+  mode is unaffected.
+- After subscribing (Stripe), starting a trial, or selecting a free plan, the
+  gate lifts automatically.
+
 ## [2.3.0] — 2026-06-21
 
 ### 🚀 Added — Paid plans & real-money billing
