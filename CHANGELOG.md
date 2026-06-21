@@ -4,6 +4,17 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.3] — 2026-06-21
+
+### 🐛 Fixed
+- **"nullnull" on the login screen** — when both Discord login and registration
+  were disabled, the login footer rendered the literal text "nullnull". (Native
+  `Element.append()` stringifies `null`; the page now filters empty sections.)
+- **Startup tab "null"** — servers whose egg has no variables no longer render a
+  stray "null" below the startup command.
+- Swept the rest of the frontend for the same native-append/null pattern — these
+  were the only remaining cases.
+
 ## [2.1.2] — 2026-06-21
 
 ### 💅 Improved

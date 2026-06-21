@@ -4,6 +4,10 @@
   const CP = window.CP;
   const { h } = CP;
 
+  // Native Element.append() stringifies null → "null"; filter before appending
+  // (e.g. the Discord button / sign-up link are null when those are disabled).
+  const fill = (parent, ...nodes) => { parent.append(...nodes.filter((n) => n != null && n !== false)); };
+
   CP.pages = CP.pages || {};
 
   async function adoptSession(res) {
@@ -48,7 +52,7 @@
       const passInput = h('input', { type: 'password', placeholder: '••••••••', autocomplete: 'current-password' });
       const btn = h('button', { class: 'btn primary block', type: 'submit' }, 'Sign in');
       card._fields = { error, btn, loginInput, passInput };
-      card.append(
+      fill(card,
         brand(),
         h('p', { class: 'sub' }, 'Deploy. Scale. Dominate. Sign in to your control panel.'),
         error,
@@ -85,7 +89,7 @@
       const error = h('div', { class: 'auth-error' });
       const codeInput = h('input', { placeholder: '6-digit code or recovery code', autocomplete: 'one-time-code', inputmode: 'numeric' });
       const btn = h('button', { class: 'btn primary block', type: 'submit' }, 'Verify');
-      card.append(
+      fill(card,
         brand(),
         h('p', { class: 'sub' }, 'Two-factor authentication — enter the code from your authenticator app.'),
         error,
@@ -118,7 +122,7 @@
       const confirm = h('input', { type: 'password', placeholder: 'Repeat password', autocomplete: 'new-password' });
       const btn = h('button', { class: 'btn primary block', type: 'submit' }, 'Create account');
       card._fields = { error, btn, username, email, password, confirm };
-      card.append(
+      fill(card,
         brand(),
         h('p', { class: 'sub' }, cfg.requireApproval
           ? 'Create an account — an admin will approve it before you can deploy servers.'

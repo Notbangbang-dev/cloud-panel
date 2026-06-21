@@ -763,7 +763,9 @@
       } catch (err) { CP.ui.toast(err.message, 'err'); }
     } });
 
-    root.append(
+    // Build the list and filter nulls — native append() would stringify a null
+    // "Variables" card (egg with no variables) into the literal text "null".
+    [
       h('div', { class: 'card' },
         h('h3', {}, 'Startup Command'),
         h('p', { class: 'muted', style: { fontSize: '13px', margin: '4px 0 14px' } },
@@ -776,7 +778,7 @@
         h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' } }, varFields)
       ) : null,
       h('div', { style: { marginTop: '18px' } }, save)
-    );
+    ].forEach((n) => { if (n != null && n !== false) root.append(n); });
   }
 
   /* ============================ SETTINGS ============================ */
