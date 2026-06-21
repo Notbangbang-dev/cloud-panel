@@ -139,6 +139,35 @@
     };
   }
 
+  async function renderDaily(el) {
+    let d;
+    try { d = (await CP.api.dailyInfo()).data; } catch { el.remove(); return; }
+    if (!d || !d.enabled) { el.remove(); return; }
+    CP.clear(el);
+    const claimed = d.claimedToday;
+    const btn = h('button', { class: 'btn primary', disabled: claimed,
+      html: claimed ? `${icon('check', 15)} Claimed today` : `${icon('coin', 15)} Claim ${d.nextReward} coins` });
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const r = (await CP.api.dailyClaim()).data;
+        CP.app.setCoins(r.coins);
+        CP.ui.toast(`+${r.reward} coins! ${r.streak}-day streak 🔥`, 'ok');
+      } catch (err) { CP.ui.toast(err.message, 'err'); }
+      renderDaily(el);
+    };
+    el.appendChild(h('div', { class: 'card', style: { display: 'flex', alignItems: 'center', gap: '14px' } },
+      h('div', { class: 'glyph', html: icon('coin', 22) }),
+      h('div', {},
+        h('b', {}, 'Daily reward'),
+        h('div', { class: 'muted', style: { fontSize: '12.5px' } },
+          claimed
+            ? `See you tomorrow! Current streak: ${d.streak} day(s).`
+            : `Claim +${d.nextReward} coins today${d.bonus ? ` (includes +${d.bonus} streak bonus)` : ''}.`)),
+      h('div', { style: { flex: 1 } }),
+      btn));
+  }
+
   CP.pages.dashboard = async function (root, ctx) {
     ctx.setCrumbs([{ label: 'Dashboard' }]);
     const u = CP.app.user;
@@ -152,6 +181,12 @@
       h('button', { class: 'btn primary', html: `${icon('plus', 16)} New Server`, onclick: () => openCreateModal(reloadAll) }),
       u.admin ? h('button', { class: 'btn', html: `${icon('shield', 16)} Admin`, onclick: () => CP.app.go('/admin') }) : null
     ));
+
+    if (CP.app.dailyReward && CP.app.dailyReward.enabled) {
+      const dailyEl = h('div', { style: { marginBottom: '18px' } });
+      root.appendChild(dailyEl);
+      renderDaily(dailyEl);
+    }
 
     const resPanel = h('div', { class: 'grid stat-grid', style: { marginBottom: '22px' } });
     root.appendChild(resPanel);

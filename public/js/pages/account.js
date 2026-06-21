@@ -61,7 +61,11 @@
     const twofaCard = h('div', { class: 'card' }, CP.spinner('Loading 2FA…'));
     buildTwoFactor(twofaCard);
 
-    root.appendChild(h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } }, profile, emailCard, passCard, twofaCard));
+    /* Appearance — profile picture + personal theme */
+    const appearanceCard = h('div', { class: 'card' }, CP.spinner('Loading appearance…'));
+    buildAppearance(appearanceCard);
+
+    root.appendChild(h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } }, profile, emailCard, passCard, twofaCard, appearanceCard));
 
     /* Activity */
     root.appendChild(h('div', { class: 'section-title' }, 'Recent Activity'));
@@ -82,6 +86,67 @@
       CP.clear(actWrap); actWrap.appendChild(CP.empty('alert', err.message));
     }
   };
+
+  async function buildAppearance(card) {
+    const u = CP.app.user;
+    let presets = [];
+    try { presets = (await CP.api.appearancePresets()).data; } catch {}
+    CP.clear(card);
+    card.appendChild(h('h3', { html: `${icon('palette', 16)} Appearance` }));
+
+    // --- Profile picture ---
+    const avatarBox = h('div', { class: 'avatar', style: { width: '54px', height: '54px', fontSize: '20px', backgroundSize: 'cover', backgroundPosition: 'center' } });
+    const renderAvatar = () => {
+      const a = CP.app.user.avatar;
+      if (a) { avatarBox.style.backgroundImage = `url("${a}")`; avatarBox.textContent = ''; }
+      else { avatarBox.style.backgroundImage = 'none'; avatarBox.textContent = (u.username[0] || '?').toUpperCase(); }
+    };
+    renderAvatar();
+    const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', style: { display: 'none' } });
+    fileInput.addEventListener('change', async () => {
+      const f = fileInput.files[0]; if (!f) return;
+      try {
+        const d = await CP.api.uploadAvatar(f);
+        CP.app.user.avatar = d.avatar; renderAvatar();
+        if (CP.app.refreshChrome) CP.app.refreshChrome();
+        CP.ui.toast('Profile picture updated', 'ok');
+      } catch (e) { CP.ui.toast(e.message, 'err'); }
+      fileInput.value = '';
+    });
+    card.appendChild(h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', margin: '14px 0' } },
+      avatarBox,
+      h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+        h('button', { class: 'btn sm', html: `${icon('up', 14)} Upload`, onclick: () => fileInput.click() }),
+        h('button', { class: 'btn sm ghost', html: `${icon('trash', 14)} Remove`, onclick: async () => {
+          try { await CP.api.deleteAvatar(); CP.app.user.avatar = null; renderAvatar(); if (CP.app.refreshChrome) CP.app.refreshChrome(); CP.ui.toast('Profile picture removed', 'info'); }
+          catch (e) { CP.ui.toast(e.message, 'err'); }
+        } }),
+        fileInput)));
+
+    // --- Personal theme ---
+    card.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px', margin: '6px 0 8px' } }, 'Personal theme (only you see it)'));
+    const swatchRow = h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } });
+    const markActive = () => {
+      const cur = CP.app.user.themePreset || '';
+      swatchRow.querySelectorAll('button').forEach((b) => b.classList.toggle('primary', (b.dataset.preset || '') === cur));
+    };
+    const setTheme = async (id) => {
+      try {
+        await CP.api.accountTheme(id || 'default');
+        CP.app.user.themePreset = id || null;
+        if (CP.appearance) CP.appearance.applyUserPreset(id || null);
+        markActive();
+        CP.ui.toast(id ? 'Theme applied' : 'Back to the panel default', 'ok');
+      } catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
+    const chip = (id, label, colors) => h('button', { class: 'btn sm', dataset: { preset: id || '' }, onclick: () => setTheme(id), style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+      h('span', { style: { width: '14px', height: '14px', borderRadius: '4px', display: 'inline-block', background: colors ? `linear-gradient(135deg, ${colors[0]}, ${colors[1]}, ${colors[2]})` : 'var(--surface-2)' } }),
+      label);
+    swatchRow.appendChild(chip('', 'Panel default', null));
+    presets.forEach((p) => swatchRow.appendChild(chip(p.id, p.name, p.swatch)));
+    card.appendChild(swatchRow);
+    markActive();
+  }
 
   async function buildTwoFactor(card) {
     let info;

@@ -7,6 +7,7 @@
 
   const SUBS = [
     { id: 'overview', label: 'Overview', icon: 'dashboard' },
+    { id: 'analytics', label: 'Analytics', icon: 'activity' },
     { id: 'servers', label: 'Servers', icon: 'server' },
     { id: 'users', label: 'Users', icon: 'users' },
     { id: 'nodes', label: 'Nodes', icon: 'cpu' },
@@ -15,6 +16,7 @@
     { id: 'eggs', label: 'Eggs', icon: 'box' },
     { id: 'databases', label: 'Databases', icon: 'drive' },
     { id: 'settings', label: 'Settings', icon: 'sliders' },
+    { id: 'achievements', label: 'Achievements', icon: 'zap' },
     { id: 'appearance', label: 'Appearance', icon: 'palette' },
     { id: 'login', label: 'Login', icon: 'key' },
   ];
@@ -48,7 +50,7 @@
     function render() {
       removeAppearancePreview(); // leaving a tab discards an unsaved theme preview
       CP.clear(content);
-      ({ overview, servers, users, nodes, locations, allocations, eggs, databases: databasesTab, settings, appearance: appearanceTab, login: loginTab }[active])(content);
+      ({ overview, analytics: analyticsTab, servers, users, nodes, locations, allocations, eggs, databases: databasesTab, settings, achievements: achievementsTab, appearance: appearanceTab, login: loginTab }[active])(content);
     }
     render();
   };
@@ -334,6 +336,7 @@
         h('td', { class: 'muted nowrap', style: { fontSize: '12px' } }, u.resources ? `${u.resources.memory}MB · ${u.resources.cpu}% · ${u.resources.servers} slot(s)` : '—'),
         h('td', {}, h('div', { class: 'row-actions' },
           CP.app.economyEnabled ? h('button', { class: 'btn sm ghost icon', title: 'Add / remove coins', html: icon('coin', 14), onclick: () => adjustCoins(u, reload) }) : null,
+          u.id !== CP.app.user.id ? h('button', { class: 'btn sm ghost icon', title: 'View as user', html: icon('users', 14), onclick: () => viewAsUser(u) }) : null,
           h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => editUser(u, reload) }),
           h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delUser(u, reload) })))
       )));
@@ -341,6 +344,18 @@
         h('thead', {}, h('tr', {}, h('th', {}, 'User'), h('th', {}, 'Email'), h('th', {}, 'Status'), h('th', {}, 'Coins'), h('th', {}, 'Quota'), h('th', { class: 'right' }, 'Actions'))), tbody));
     } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
   }
+  async function viewAsUser(u) {
+    if (u.id === CP.app.user.id) return;
+    if (!(await CP.ui.confirm({ title: 'View as user', message: `Open the panel as ${u.username}? You can exit back to your admin account at any time.`, confirmText: 'View as user' }))) return;
+    try {
+      const r = await CP.api.adminImpersonate(u.id);
+      sessionStorage.setItem('cp_imp_admin', CP.api.token); // remember the admin session
+      sessionStorage.setItem('cp_imp_name', u.username);
+      CP.api.token = r.data.token;
+      location.href = '/'; // hard reload as the target user
+    } catch (e) { CP.ui.toast(e.message, 'err'); }
+  }
+
   function userForm(u) {
     const username = h('input', { value: u ? u.username : '', placeholder: 'username', disabled: !!u });
     const email = h('input', { value: u ? u.email : '', placeholder: 'user@cloud.panel' });
@@ -444,6 +459,26 @@
     const afkCoins = numIn(s.afk ? s.afk.coins : 1);
     const afkInterval = numIn(s.afk ? s.afk.intervalSeconds : 30);
 
+    const txtIn = (v, ph) => h('input', { value: v || '', placeholder: ph || '' });
+    const areaIn = (v) => { const t = h('textarea', { rows: '2', style: { resize: 'vertical', minHeight: '40px', width: '100%' } }); t.value = v || ''; return t; };
+    const selIn = (v, opts) => { const el = h('select', {}, ...opts.map((o) => h('option', { value: o[0] }, o[1]))); el.value = v; return el; };
+
+    const drd = s.dailyReward || {};
+    const drOn = sw(drd.enabled), drCoins = numIn(drd.coins ?? 100), drStreak = numIn(drd.streakBonus ?? 0), drMax = numIn(drd.maxBonus ?? 0);
+    const mt = s.maintenance || {};
+    const mtOn = sw(mt.enabled), mtTitle = txtIn(mt.title, "We'll be right back"), mtMsg = areaIn(mt.message);
+    const mtSched = sw(mt.scheduleEnabled);
+    const toLocalDT = (iso) => { if (!iso) return ''; const d = new Date(iso); if (isNaN(d.getTime())) return ''; return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+    const mtStart = h('input', { type: 'datetime-local', value: toLocalDT(mt.start) });
+    const mtEnd = h('input', { type: 'datetime-local', value: toLocalDT(mt.end) });
+    const bn = s.banner || {};
+    const bnOn = sw(bn.enabled), bnText = txtIn(bn.text, 'Shown across the panel & login screen…');
+    const bnStyle = selIn(bn.style || 'info', [['info', 'Info (cyan)'], ['warn', 'Warning (yellow)'], ['success', 'Success (green)'], ['danger', 'Danger (red)']]);
+    const seasonalSel = selIn((s.seasonal && s.seasonal.mode) || 'off', [['off', 'Off'], ['auto', 'Auto (by date)'], ['halloween', 'Halloween 🎃'], ['winter', 'Winter ❄️'], ['christmas', 'Christmas 🎄'], ['newyear', 'New Year 🎉']]);
+    const bcOn = sw(s.bragCards && s.bragCards.enabled);
+    const soOn = sw(s.statusOverview && s.statusOverview.enabled);
+    const soTitle = txtIn(s.statusOverview ? s.statusOverview.title : '', 'My Network');
+
     const shopRow = (label, unit, o) => h('div', { class: 'grid', style: { gridTemplateColumns: '120px 1fr 1fr', gap: '0 12px', alignItems: 'end' } },
       h('div', { style: { paddingBottom: '12px', fontWeight: '700' } }, label),
       field('Price (coins)', o.price), field(`Amount (${unit})`, o.amount));
@@ -465,8 +500,14 @@
         },
         afk: { enabled: afkOn.checked, coins: +afkCoins.value, intervalSeconds: +afkInterval.value },
         security: { force2faAdmins: force2fa.checked },
+        dailyReward: { enabled: drOn.checked, coins: +drCoins.value, streakBonus: +drStreak.value, maxBonus: +drMax.value },
+        maintenance: { enabled: mtOn.checked, title: mtTitle.value, message: mtMsg.value, allowAdmins: true, scheduleEnabled: mtSched.checked, start: mtStart.value ? new Date(mtStart.value).toISOString() : '', end: mtEnd.value ? new Date(mtEnd.value).toISOString() : '' },
+        banner: { enabled: bnOn.checked, text: bnText.value, style: bnStyle.value },
+        seasonal: { mode: seasonalSel.value },
+        bragCards: { enabled: bcOn.checked },
+        statusOverview: { enabled: soOn.checked, title: soTitle.value },
       };
-      try { await CP.api.adminUpdateSettings(patch); CP.app.economyEnabled = patch.economy.enabled; CP.app.afkEnabled = patch.economy.enabled && patch.afk.enabled; CP.ui.toast('Settings saved', 'ok'); }
+      try { await CP.api.adminUpdateSettings(patch); CP.app.economyEnabled = patch.economy.enabled; CP.app.afkEnabled = patch.economy.enabled && patch.afk.enabled; if (CP.appearance && CP.appearance.reloadGlobal) CP.appearance.reloadGlobal(); if (CP.appearance && CP.appearance.load) CP.appearance.load(); CP.ui.toast('Settings saved', 'ok'); }
       catch (e) { CP.ui.toast(e.message, 'err'); }
     };
 
@@ -500,8 +541,153 @@
           shopRow('RAM', 'MB', shop.memory), shopRow('CPU', '%', shop.cpu),
           shopRow('Disk', 'MB', shop.disk), shopRow('Server Slot', 'slots', shop.servers),
           shopRow('Backup Slot', 'slots', shop.backups), shopRow('Database Slot', 'slots', shop.databases))),
+      h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', marginTop: '18px' } },
+        h('div', { class: 'card' },
+          h('h3', { html: `${icon('coin', 16)} Daily reward` }),
+          h('div', { style: { marginTop: '8px' } }, switchRow('Enable daily reward', 'Members claim coins once per day (needs economy on).', drOn)),
+          h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px', marginTop: '8px' } },
+            field('Coins / day', drCoins), field('Streak bonus', drStreak), field('Max bonus', drMax))),
+        h('div', { class: 'card' },
+          h('h3', { html: `${icon('alert', 16)} Maintenance & banner` }),
+          h('div', { style: { marginTop: '8px' } }, switchRow('Maintenance mode', 'Lock non-admins out with a notice (admins keep access).', mtOn)),
+          field('Maintenance title', mtTitle),
+          field('Maintenance message', mtMsg),
+          switchRow('Schedule a window', 'Auto-enable maintenance during the window below.', mtSched),
+          h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px' } }, field('Start', mtStart), field('End', mtEnd)),
+          h('div', { style: { height: '1px', background: 'var(--border)', margin: '14px 0' } }),
+          switchRow('Broadcast banner', 'Show a banner across the panel + login.', bnOn),
+          h('div', { class: 'grid', style: { gridTemplateColumns: '2fr 1fr', gap: '0 12px', marginTop: '8px' } },
+            field('Banner text', bnText), field('Style', bnStyle)),
+          h('div', { style: { height: '1px', background: 'var(--border)', margin: '14px 0' } }),
+          field('Seasonal theme', seasonalSel),
+          h('div', { style: { height: '1px', background: 'var(--border)', margin: '14px 0' } }),
+          switchRow('Brag cards', 'Members can export a PNG of a server’s stats.', bcOn),
+          switchRow('Network status page', 'Public /status overview of all servers.', soOn),
+          field('Status page title', soTitle))),
       h('div', { style: { marginTop: '18px' } }, save)
     );
+  }
+
+  /* ---------------- Analytics ---------------- */
+  async function analyticsTab(root) {
+    loading(root);
+    let d;
+    try { d = (await CP.api.adminAnalytics()).data; }
+    catch (e) { CP.clear(root); return root.appendChild(CP.empty('alert', e.message)); }
+    CP.clear(root);
+    const t = d.totals;
+    const tile = (ic, label, val, sub) => h('div', { class: 'card tile res-tile' },
+      h('div', { class: 'k', html: `${icon(ic, 15)} ${label}` }),
+      h('div', { class: 'v' }, String(val)),
+      sub ? h('div', { class: 'faint', style: { fontSize: '11.5px' } }, sub) : null);
+
+    root.appendChild(h('div', { class: 'grid stat-grid', style: { marginBottom: '18px' } },
+      tile('users', 'Users', t.users, `${t.usersActive} active · ${t.usersPending} pending`),
+      tile('server', 'Servers', t.servers, `${t.serversRunning} running`),
+      tile('cpu', 'Nodes', t.nodes, `${t.allocationsUsed}/${t.allocationsTotal} allocations`),
+      tile('coin', 'Coins', t.coins.toLocaleString(), 'in circulation'),
+      tile('zap', 'XP awarded', t.xpAwarded.toLocaleString(), `${t.petsOwned} pets owned`),
+      tile('shield', 'Admins', t.admins, '')));
+
+    const max = Math.max(1, ...d.signups.map((s) => s.count));
+    const bars = h('div', { style: { display: 'flex', alignItems: 'flex-end', gap: '4px', height: '120px', marginTop: '12px' } });
+    d.signups.forEach((s) => bars.appendChild(h('div', { title: `${s.date}: ${s.count}`, style: { flex: 1, minHeight: '2px', height: `${Math.round((s.count / max) * 100)}%`, background: 'var(--accent-grad)', borderRadius: '4px 4px 0 0' } })));
+    root.appendChild(h('div', { class: 'card' },
+      h('h3', { html: `${icon('activity', 16)} Signups (last 14 days)` }),
+      bars,
+      h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '6px' } }, `${d.signups.reduce((a, b) => a + b.count, 0)} new accounts in 14 days`)));
+
+    const flow = d.economyFlow || [];
+    if (flow.length) {
+      const fmax = Math.max(1, ...flow.map((x) => Math.max(x.earned, x.spent)));
+      const fbars = h('div', { style: { display: 'flex', alignItems: 'flex-end', gap: '6px', height: '120px', marginTop: '12px' } });
+      flow.forEach((x) => fbars.appendChild(h('div', { title: `${x.date}: +${x.earned} / -${x.spent}`, style: { flex: 1, display: 'flex', gap: '2px', alignItems: 'flex-end', height: '100%' } },
+        h('div', { style: { flex: 1, height: `${Math.round((x.earned / fmax) * 100)}%`, minHeight: '2px', background: 'var(--green, #4ade80)', borderRadius: '3px 3px 0 0' } }),
+        h('div', { style: { flex: 1, height: `${Math.round((x.spent / fmax) * 100)}%`, minHeight: '2px', background: 'var(--red, #f87171)', borderRadius: '3px 3px 0 0' } }))));
+      root.appendChild(h('div', { class: 'card', style: { marginTop: '18px' } },
+        h('h3', { html: `${icon('coin', 16)} Economy flow (14 days)` }),
+        h('div', { class: 'muted', style: { fontSize: '12px' } }, '🟢 earned · 🔴 spent'),
+        fbars,
+        h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '6px' } }, `Earned ${flow.reduce((a, b) => a + b.earned, 0).toLocaleString()} · Spent ${flow.reduce((a, b) => a + b.spent, 0).toLocaleString()} coins`)));
+    }
+
+    const eggMax = Math.max(1, ...d.serversByEgg.map((x) => x.count));
+    const eggList = h('div', { style: { marginTop: '10px' } });
+    d.serversByEgg.forEach((e) => eggList.appendChild(CP.bar(`${e.name} · ${e.count}`, e.count, eggMax, 'cpu')));
+    const balList = h('div', { style: { marginTop: '6px' } });
+    d.topBalances.forEach((b) => balList.appendChild(h('div', { style: { display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' } }, h('b', {}, b.username), h('span', { class: 'mono' }, b.coins.toLocaleString()))));
+    root.appendChild(h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', marginTop: '18px' } },
+      h('div', { class: 'card' }, h('h3', { html: `${icon('box', 16)} Servers by type` }), d.serversByEgg.length ? eggList : h('div', { class: 'muted', style: { fontSize: '13px' } }, 'No servers yet.')),
+      h('div', { class: 'card' }, h('h3', { html: `${icon('coin', 16)} Top balances` }), d.topBalances.length ? balList : h('div', { class: 'muted', style: { fontSize: '13px' } }, '—'))));
+  }
+
+  /* ---------------- Achievements & Pets ---------------- */
+  async function achievementsTab(root) {
+    loading(root);
+    let s, data;
+    try { s = (await CP.api.adminSettings()).data; data = (await CP.api.adminAchievements()).data; }
+    catch (e) { CP.clear(root); return root.appendChild(CP.empty('alert', e.message)); }
+    CP.clear(root);
+
+    const sw = (c) => { const i = h('input', { type: 'checkbox', class: 'switch' }); i.checked = !!c; return i; };
+    const switchRow = (label, desc, input) => h('div', { class: 'switch-row' },
+      h('div', {}, h('b', {}, label), h('div', { class: 'muted', style: { fontSize: '12.5px' } }, desc)),
+      h('div', { style: { marginLeft: 'auto' } }, input));
+    const field = (l, i) => h('label', { class: 'field' }, h('span', {}, l), i);
+
+    const achOn = sw(s.achievements && s.achievements.enabled);
+    const petsOn = sw(s.pets && s.pets.enabled);
+    const saveToggles = async () => {
+      try {
+        await CP.api.adminUpdateSettings({ achievements: { enabled: achOn.checked }, pets: { enabled: petsOn.checked } });
+        CP.app.achievementsEnabled = achOn.checked;
+        CP.app.petsEnabled = CP.app.economyEnabled && petsOn.checked;
+        CP.ui.toast('Saved', 'ok');
+      } catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
+    achOn.onchange = saveToggles; petsOn.onchange = saveToggles;
+
+    root.appendChild(h('div', { class: 'card' },
+      h('h3', { html: `${icon('zap', 16)} Features` }),
+      h('div', { style: { marginTop: '8px' } },
+        switchRow('Achievements & XP', 'Show the Achievements tab and award XP / badges.', achOn),
+        switchRow('Server pets', 'Let members buy & equip coin-bought pets (needs the economy on).', petsOn))));
+
+    const bgrid = h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(230px,1fr))', marginTop: '10px' } });
+    data.builtin.forEach((a) => bgrid.appendChild(h('div', { class: 'card tile', style: { display: 'flex', gap: '10px', alignItems: 'flex-start' } },
+      h('div', { style: { fontSize: '22px' } }, a.icon),
+      h('div', {}, h('b', {}, a.name), h('div', { class: 'muted', style: { fontSize: '12px' } }, `${a.desc} · ${a.xp} XP`)))));
+    root.appendChild(h('div', { class: 'card', style: { marginTop: '18px' } }, h('h3', { html: `${icon('shield', 16)} Built-in achievements` }), bgrid));
+
+    const list = h('div', { style: { margin: '10px 0' } });
+    const reload = () => achievementsTab(CP.clear(root));
+    const renderList = (items) => {
+      CP.clear(list);
+      if (!items.length) { list.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'No custom achievements yet.')); return; }
+      items.forEach((a) => list.appendChild(h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid var(--border)' } },
+        h('div', { style: { fontSize: '20px' } }, a.icon),
+        h('div', { style: { flex: 1 } }, h('b', {}, a.name), h('div', { class: 'muted', style: { fontSize: '12px' } }, `${a.desc || ''} · ${a.xp} XP · unlock when ${a.condition.stat} ≥ ${a.condition.value}`)),
+        h('button', { class: 'btn sm red', html: icon('trash', 13), onclick: async () => { try { await CP.api.adminDeleteAchievement(a.id); CP.ui.toast('Deleted', 'ok'); reload(); } catch (e) { CP.ui.toast(e.message, 'err'); } } }))));
+    };
+    renderList(data.custom);
+
+    const fId = h('input', { placeholder: 'unique_id' }), fName = h('input', { placeholder: 'Name' }), fIcon = h('input', { placeholder: '🏅', maxlength: '4' });
+    const fXp = h('input', { type: 'number', value: '100', min: '0' }), fVal = h('input', { type: 'number', value: '1', min: '1' }), fDesc = h('input', { placeholder: 'How to earn it' });
+    const fStat = h('select', {}, ...data.allowedStats.map((st) => h('option', { value: st }, st)));
+    const addBtn = h('button', { class: 'btn primary', html: `${icon('plus', 14)} Add achievement` });
+    addBtn.onclick = async () => {
+      try {
+        await CP.api.adminAddAchievement({ id: fId.value, name: fName.value, desc: fDesc.value, icon: fIcon.value || '🏅', xp: +fXp.value, stat: fStat.value, value: +fVal.value });
+        CP.ui.toast('Achievement added', 'ok'); reload();
+      } catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
+    root.appendChild(h('div', { class: 'card', style: { marginTop: '18px' } },
+      h('h3', { html: `${icon('plus', 16)} Custom achievements` }),
+      h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 6px' } }, 'Unlock automatically when a member’s stat reaches your threshold.'),
+      list,
+      h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: '0 12px' } },
+        field('ID', fId), field('Name', fName), field('Icon', fIcon), field('XP', fXp), field('Unlock stat', fStat), field('≥ value', fVal), field('Description', fDesc)),
+      h('div', { style: { marginTop: '12px' } }, addBtn)));
   }
 
   /* ---------------- Nodes ---------------- */
@@ -623,21 +809,77 @@
 
   /* ---------------- Eggs ---------------- */
   async function eggs(root) {
-    loading(root);
+    const reload = () => eggs(CP.clear(root));
+    root.appendChild(h('div', { class: 'fm-bar' }, h('div', { style: { flex: 1 } }),
+      h('button', { class: 'btn primary', html: `${icon('plus', 14)} Create egg`, onclick: () => eggModal(null, reload) })));
+    const wrap = h('div', {}, CP.spinner());
+    root.appendChild(wrap);
     try {
       const list = (await CP.api.get('/admin/eggs')).data;
-      CP.clear(root);
+      CP.clear(wrap);
       const grid = h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } });
       list.forEach((e) => grid.appendChild(h('div', { class: 'card' },
         h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center' } },
           h('div', { class: 'glyph', style: { width: '40px', height: '40px' }, html: icon('box', 20) }),
-          h('div', {}, h('b', {}, e.name), h('div', { class: 'muted', style: { fontSize: '12px' } }, e.category))),
+          h('div', { style: { flex: 1 } }, h('b', {}, e.name), h('div', { class: 'muted', style: { fontSize: '12px' } }, e.category + (e.custom ? ' · custom' : ''))),
+          h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => eggModal(e, reload) }),
+          h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delEgg(e, reload) })),
         h('p', { class: 'muted', style: { fontSize: '13px', lineHeight: '1.6' } }, e.description),
         h('div', { class: 'chip', html: `${icon('box', 13)} ${CP.esc(e.docker)}` }),
         h('div', { class: 'mono faint', style: { fontSize: '11px', marginTop: '10px', wordBreak: 'break-all' } }, e.startup)
       )));
-      root.appendChild(grid);
-    } catch (err) { CP.clear(root); root.appendChild(CP.empty('alert', err.message)); }
+      wrap.appendChild(grid);
+    } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
+  }
+  async function delEgg(e, done) {
+    if (!(await CP.ui.confirm({ title: 'Delete egg', message: `Delete '${e.name}'? (Built-in eggs may reappear on restart.)`, confirmText: 'Delete' }))) return;
+    try { await CP.api.adminDeleteEgg(e.id); CP.ui.toast('Deleted', 'ok'); done(); } catch (err) { CP.ui.toast(err.message, 'err'); }
+  }
+  function eggModal(egg, done) {
+    const name = h('input', { value: egg ? egg.name : '', placeholder: 'My Custom Server' });
+    const category = h('input', { value: egg ? egg.category : 'Custom', placeholder: 'Custom' });
+    const docker = h('input', { value: egg ? egg.docker : 'node:lts', placeholder: 'node:lts' });
+    const stopCommand = h('input', { value: egg ? egg.stopCommand : 'stop', placeholder: 'stop' });
+    const startup = h('input', { value: egg ? egg.startup : '', placeholder: 'java -jar {{JARFILE}}' });
+    const description = h('textarea', { rows: '2', style: { width: '100%', resize: 'vertical' } }); description.value = egg ? (egg.description || '') : '';
+    const varsWrap = h('div', {});
+    const addVarRow = (v) => {
+      const vn = h('input', { value: v ? v.name : '', placeholder: 'Label' });
+      const ve = h('input', { value: v ? v.env : '', placeholder: 'ENV_VAR' });
+      const vd = h('input', { value: v ? v.default : '', placeholder: 'default' });
+      const ue = h('input', { type: 'checkbox' }); if (!v || v.userEditable) ue.checked = true;
+      const row = h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: '0 8px', alignItems: 'center', marginBottom: '6px' } },
+        vn, ve, vd, h('label', { class: 'muted', style: { fontSize: '11px', display: 'flex', gap: '4px', alignItems: 'center' } }, ue, 'edit'),
+        h('button', { class: 'btn sm ghost icon', html: icon('trash', 13), onclick: () => row.remove() }));
+      row._get = () => ({ name: vn.value, env: ve.value, default: vd.value, userEditable: ue.checked });
+      varsWrap.appendChild(row);
+    };
+    ((egg && egg.variables) || []).forEach(addVarRow);
+
+    const field = (l, i, hint) => h('label', { class: 'field' }, h('span', {}, l), i, hint ? h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '2px' } }, hint) : null);
+    const save = h('button', { class: 'btn primary', html: `${icon('save', 15)} ${egg ? 'Save egg' : 'Create egg'}` });
+    const ref = CP.ui.modal({
+      title: egg ? `Edit egg · ${egg.name}` : 'Create egg', size: 'lg',
+      body: h('div', {},
+        h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 14px' } }, field('Name', name), field('Category', category), field('Docker image', docker), field('Stop command', stopCommand)),
+        field('Startup command', startup, 'Use {{VARIABLE}} placeholders. Tokens run without a shell (passed as args).'),
+        field('Description', description),
+        h('div', { class: 'section-title', style: { margin: '14px 0 6px' } }, 'Variables'),
+        varsWrap,
+        h('button', { class: 'btn sm ghost', html: `${icon('plus', 13)} Add variable`, onclick: () => addVarRow(null) }),
+        egg && egg.installer && egg.installer !== 'none'
+          ? h('p', { class: 'muted', style: { fontSize: '12px', marginTop: '10px' } }, `Uses the built-in “${egg.installer}” auto-installer — edits keep it.`)
+          : h('p', { class: 'muted', style: { fontSize: '12px', marginTop: '10px' } }, 'Custom eggs are manual-install — members upload files via the file manager / SFTP.')),
+      footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'), save],
+    });
+    save.onclick = async () => {
+      const variables = [...varsWrap.children].map((r) => r._get()).filter((v) => v.env);
+      const body = { name: name.value, category: category.value, docker: docker.value, stopCommand: stopCommand.value, startup: startup.value, description: description.value, variables };
+      try {
+        if (egg) await CP.api.adminUpdateEgg(egg.id, body); else await CP.api.adminCreateEgg(body);
+        CP.ui.toast(egg ? 'Egg saved' : 'Egg created', 'ok'); ref.close(); done();
+      } catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
   }
 
   /* ---------------- Database hosts ---------------- */

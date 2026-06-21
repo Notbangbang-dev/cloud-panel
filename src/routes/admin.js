@@ -11,6 +11,8 @@ const pm = require('../services/processManager');
 const users = require('../services/users');
 const settings = require('../services/settings');
 const appearance = require('../services/appearance');
+const achievements = require('../services/achievements');
+const ledger = require('../services/ledger');
 const backups = require('../services/backups');
 const subusers = require('../services/subusers');
 const schedules = require('../services/schedules');
@@ -67,7 +69,7 @@ router.post('/users', (req, res) => {
 router.patch('/users/:id', (req, res) => {
   const user = db.get('users', req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const { email, firstName, lastName, admin, password, status, coins, resources } = req.body || {};
+  const { email, firstName, lastName, admin, password, status, coins, resources, avatar } = req.body || {};
   const patch = {};
   if (email) patch.email = email;
   if (firstName !== undefined) patch.firstName = firstName;
@@ -76,6 +78,7 @@ router.patch('/users/:id', (req, res) => {
   if (password) patch.password = auth.hashPassword(password);
   if (status && ['active', 'pending', 'declined'].includes(status)) patch.status = status;
   if (coins !== undefined) patch.coins = Math.max(0, Math.floor(Number(coins) || 0));
+  if (avatar !== undefined) patch.avatar = avatar ? String(avatar).slice(0, 512) : null; // set/clear profile picture
   if (resources && typeof resources === 'object') {
     patch.resources = {
       memory: Math.max(0, Math.floor(Number(resources.memory ?? user.resources?.memory) || 0)),
@@ -87,6 +90,78 @@ router.patch('/users/:id', (req, res) => {
     };
   }
   res.json({ data: auth.publicUser(db.update('users', user.id, patch)) });
+});
+
+/* ---- View as user (impersonation) --------------------------------------- */
+router.post('/users/:id/impersonate', (req, res) => {
+  const target = db.get('users', req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.id === req.user.id) return res.status(400).json({ error: "You're already yourself." });
+  const token = auth.signImpersonation(target, req.user.id);
+  db.log({ type: 'admin', userId: req.user.id, message: `${req.user.username} started viewing as ${target.username}` });
+  res.json({ data: { token, user: auth.publicUser(target) } });
+});
+
+/* ---- Panel analytics ----------------------------------------------------- */
+router.get('/analytics', (req, res) => {
+  const users = db.all('users');
+  const servers = db.all('servers');
+  const nodes = db.all('nodes');
+  const allocations = db.all('allocations');
+
+  // Signups over the last 14 days (UTC).
+  const days = [];
+  const byDay = {};
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    byDay[d] = 0; days.push(d);
+  }
+  users.forEach((u) => { const d = (u.createdAt || '').slice(0, 10); if (d in byDay) byDay[d]++; });
+
+  // Servers grouped by egg.
+  const eggName = Object.fromEntries(db.all('eggs').map((e) => [e.id, e.name]));
+  const byEgg = {};
+  servers.forEach((s) => { const n = eggName[s.eggId] || 'Unknown'; byEgg[n] = (byEgg[n] || 0) + 1; });
+
+  let running = 0;
+  servers.forEach((s) => { try { if (pm.state(s.id).status === 'running') running++; } catch {} });
+
+  res.json({
+    data: {
+      totals: {
+        users: users.length,
+        usersActive: users.filter((u) => u.status === 'active').length,
+        usersPending: users.filter((u) => u.status === 'pending').length,
+        admins: users.filter((u) => u.admin).length,
+        servers: servers.length,
+        serversRunning: running,
+        nodes: nodes.length,
+        allocationsUsed: allocations.filter((a) => a.serverId).length,
+        allocationsTotal: allocations.length,
+        coins: users.reduce((s, u) => s + (u.coins || 0), 0),
+        xpAwarded: users.reduce((s, u) => s + (u.xp || 0), 0),
+        petsOwned: users.reduce((s, u) => s + ((u.pets || []).length), 0),
+      },
+      signups: days.map((d) => ({ date: d, count: byDay[d] })),
+      economyFlow: ledger.recentDays(14),
+      serversByEgg: Object.entries(byEgg).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+      topBalances: users.slice().sort((a, b) => (b.coins || 0) - (a.coins || 0)).slice(0, 5).map((u) => ({ username: u.username, coins: u.coins || 0 })),
+    },
+  });
+});
+
+/* ---- Custom achievements ------------------------------------------------ */
+router.get('/achievements', (req, res) => {
+  res.json({ data: achievements.adminList() });
+});
+router.post('/achievements', (req, res) => {
+  try { res.status(201).json({ data: achievements.addCustom(req.body || {}) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/achievements/:id', (req, res) => {
+  const ok = achievements.removeCustom(req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Achievement not found' });
+  res.json({ ok: true });
 });
 
 /** Approve / decline a pending user. */
@@ -113,6 +188,7 @@ router.post('/users/:id/coins', (req, res) => {
   const amount = Math.floor(Number((req.body || {}).amount) || 0);
   const coins = Math.max(0, (user.coins || 0) + amount);
   const updated = db.update('users', user.id, { coins });
+  if (amount) ledger.record(user.id, amount, 'admin adjustment');
   db.log({ type: 'admin', userId: req.user.id, message: `${amount >= 0 ? 'Gave' : 'Removed'} ${Math.abs(amount)} coins ${amount >= 0 ? 'to' : 'from'} ${user.username}` });
   res.json({ data: auth.publicUser(updated) });
 });
@@ -180,7 +256,7 @@ router.post('/appearance/upload', express.raw({ type: () => true, limit: '40mb' 
   const filename = String(req.query.filename || 'upload');
   const ext = path.extname(filename).toLowerCase().replace('.', '').slice(0, 8);
   if (!UPLOAD_TYPES[ext])
-    return res.status(400).json({ error: 'Unsupported file type. Use png, jpg, gif, webp, svg, mp4 or webm.' });
+    return res.status(400).json({ error: 'Unsupported file type. Use png, jpg, gif, webp, mp4 or webm. (SVG is not allowed — it can carry scripts.)' });
   const buf = req.body;
   if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: 'Empty upload' });
   const dir = path.join(config.uploadsDir, 'appearance');
@@ -315,6 +391,59 @@ router.delete('/allocations/:id', (req, res) => {
 
 router.get('/eggs', (req, res) => {
   res.json({ data: db.all('eggs') });
+});
+
+/** Validate + normalize an egg builder payload (custom, manual-install eggs). */
+function buildEgg(body) {
+  const b = body || {};
+  const name = String(b.name || '').trim().slice(0, 60);
+  if (!name) throw new Error('Name is required.');
+  const startup = String(b.startup || '').trim().slice(0, 500);
+  if (!startup) throw new Error('Startup command is required.');
+  const variables = (Array.isArray(b.variables) ? b.variables : []).slice(0, 30).map((v) => ({
+    name: String(v.name || '').slice(0, 60),
+    env: String(v.env || '').toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/^_+/, '').slice(0, 40),
+    default: String(v.default == null ? '' : v.default).slice(0, 300),
+    userEditable: !!v.userEditable,
+  })).filter((v) => v.env);
+  return {
+    name,
+    category: String(b.category || 'Custom').slice(0, 40),
+    description: String(b.description || '').slice(0, 500),
+    docker: String(b.docker || 'node:lts').slice(0, 100),
+    startup,
+    stopCommand: String(b.stopCommand || 'stop').slice(0, 60),
+    variables,
+  };
+}
+
+router.post('/eggs', (req, res) => {
+  try {
+    const e = buildEgg(req.body);
+    const rec = { id: 'egg_' + crypto.randomBytes(6).toString('hex'), uuid: crypto.randomUUID(), createdAt: new Date().toISOString(), installer: 'none', custom: true, ...e };
+    db.insert('eggs', rec);
+    db.log({ type: 'admin', userId: req.user.id, message: `Created egg '${rec.name}'` });
+    res.status(201).json({ data: rec });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.put('/eggs/:id', (req, res) => {
+  const egg = db.get('eggs', req.params.id);
+  if (!egg) return res.status(404).json({ error: 'Egg not found' });
+  try {
+    const e = buildEgg({ ...egg, ...req.body });
+    // Preserve the egg's installer (don't break a built-in's auto-installer).
+    const rec = db.update('eggs', egg.id, { name: e.name, category: e.category, description: e.description, docker: e.docker, startup: e.startup, stopCommand: e.stopCommand, variables: e.variables });
+    res.json({ data: rec });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.delete('/eggs/:id', (req, res) => {
+  const egg = db.get('eggs', req.params.id);
+  if (!egg) return res.status(404).json({ error: 'Egg not found' });
+  db.remove('eggs', egg.id);
+  db.log({ type: 'admin', userId: req.user.id, message: `Deleted egg '${egg.name}'` });
+  res.json({ ok: true });
 });
 
 // ---- Database hosts (for per-server databases) ----------------------------

@@ -270,8 +270,87 @@ function generateCss(input) {
 }
 
 /* ----------------------------------------------------------------------------
+ * Per-user theme — a single preset's :root color overrides (no background), so
+ * a member can re-skin the panel for themselves on top of the admin theme.
+ * ------------------------------------------------------------------------- */
+function presetCss(presetId) {
+  const preset = PRESET_MAP[presetId];
+  if (!preset) return '';
+  const p = preset.p;
+  const a = 0.72;
+  return [
+    `/* Cloud Panel per-user theme: ${preset.id} */`,
+    ':root {',
+    `  --bg: ${p.bg};`,
+    `  --bg-2: ${p.bg2 || p.bg};`,
+    `  --surface: ${hexToRgba(p.surface, a)};`,
+    `  --surface-2: ${hexToRgba(p.surf2 || p.surface, a)};`,
+    `  --surface-solid: ${p.surface};`,
+    `  --border: rgba(${p.borderRgb}, 0.16);`,
+    `  --border-strong: rgba(${p.borderRgb}, 0.30);`,
+    `  --text: ${p.text};`,
+    `  --muted: ${p.muted};`,
+    `  --faint: ${p.faint};`,
+    `  --cyan: ${p.primary};`,
+    `  --indigo: ${p.secondary};`,
+    `  --violet: ${p.accent};`,
+    `  --accent-grad: linear-gradient(135deg, ${p.primary} 0%, ${p.secondary} 50%, ${p.accent} 100%);`,
+    `  --input-bg: ${hexToRgba(p.bg, 0.55)};`,
+    `  --input-bg-focus: ${hexToRgba(p.bg, 0.92)};`,
+    '}',
+    'input, select, textarea { background: var(--input-bg); }',
+    'input:focus, select:focus, textarea:focus { background: var(--input-bg-focus); }',
+  ].join('\n') + '\n';
+}
+
+/* ----------------------------------------------------------------------------
+ * Seasonal auto-themes — a festive accent palette layered on top of the theme.
+ * ------------------------------------------------------------------------- */
+const SEASON_ACCENTS = {
+  halloween: { name: 'Halloween', emoji: '🎃', primary: '#f97316', secondary: '#a855f7', accent: '#f59e0b' },
+  winter: { name: 'Winter', emoji: '❄️', primary: '#38bdf8', secondary: '#818cf8', accent: '#22d3ee' },
+  christmas: { name: 'Christmas', emoji: '🎄', primary: '#ef4444', secondary: '#22c55e', accent: '#f43f5e' },
+  newyear: { name: "New Year", emoji: '🎉', primary: '#f59e0b', secondary: '#a855f7', accent: '#fde047' },
+};
+
+/** Resolve the active season from a configured mode ('auto' uses the date). */
+function effectiveSeason(mode) {
+  if (!mode || mode === 'off') return null;
+  if (mode !== 'auto') return SEASON_ACCENTS[mode] ? mode : null;
+  const d = new Date();
+  const m = d.getMonth() + 1, day = d.getDate();
+  if (m === 10) return 'halloween';
+  if (m === 12 && day <= 26) return 'christmas';
+  if ((m === 12 && day >= 27) || (m === 1 && day <= 2)) return 'newyear';
+  if (m === 1 || m === 2) return 'winter';
+  return null;
+}
+
+/** Extra CSS for the active seasonal theme (appended to /api/appearance.css). */
+function seasonalCss() {
+  const mode = (db.settings().seasonal || {}).mode || 'off';
+  const season = effectiveSeason(mode);
+  const s = season && SEASON_ACCENTS[season];
+  if (!s) return '';
+  return [
+    `/* Seasonal theme: ${s.name} */`,
+    ':root {',
+    `  --cyan: ${s.primary};`,
+    `  --indigo: ${s.secondary};`,
+    `  --violet: ${s.accent};`,
+    `  --accent-grad: linear-gradient(135deg, ${s.primary} 0%, ${s.secondary} 50%, ${s.accent} 100%);`,
+    '}',
+  ].join('\n') + '\n';
+}
+
+/* ----------------------------------------------------------------------------
  * Public accessors
  * ------------------------------------------------------------------------- */
+/** The currently-active seasonal id (or null) from settings. */
+function activeSeason() {
+  return effectiveSeason((db.settings().seasonal || {}).mode || 'off');
+}
+
 /** The current, sanitized appearance document. */
 function get() {
   const s = db.settings();
@@ -295,6 +374,10 @@ module.exports = {
   DEFAULT_APPEARANCE,
   PRESETS,
   presetList,
+  presetCss,
+  seasonalCss,
+  effectiveSeason,
+  activeSeason,
   sanitize,
   generateCss,
   resolvePalette,

@@ -17,10 +17,34 @@ const players = require('../services/players');
 const metrics = require('../services/metrics');
 const totp = require('../services/totp');
 const statuspage = require('../services/statuspage');
+const daily = require('../services/dailyrewards');
+const appearance = require('../services/appearance');
+const achievements = require('../services/achievements');
+const pets = require('../services/pets');
+const friends = require('../services/friends');
+const presence = require('../services/presence');
+const ledger = require('../services/ledger');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const config = require('../config');
 const { canAccessServer, serializeServer, serializeAllocation, hasPermission, isOwner } = require('./helpers');
 
 const router = express.Router();
 router.use(auth.authRequired);
+
+// Track presence on every authenticated client request (in-memory, cheap).
+router.use((req, res, next) => { presence.touch(req.user.id); next(); });
+
+// Maintenance mode — lock non-admins out of the whole client API with a notice.
+// Admins keep full access so they can still manage the panel while it's "down".
+router.use((req, res, next) => {
+  if (settings.maintenanceActive() && !req.user.admin) {
+    const m = db.settings().maintenance || {};
+    return res.status(503).json({ error: m.message || 'The panel is under maintenance.', maintenance: true });
+  }
+  next();
+});
 
 /** Require a specific per-server permission (owner/admin always pass). */
 function requirePerm(perm) {
@@ -137,6 +161,7 @@ router.post('/servers', activeRequired, (req, res) => {
     return res.status(409).json({ error: err.message });
   }
   db.log({ type: 'server', userId: req.user.id, serverId: server.id, message: `${req.user.username} created server '${server.name}'` });
+  try { achievements.evaluate(db.get('users', req.user.id)); } catch {}
   res.status(201).json({ data: serializeServer(server, { detail: true }) });
 });
 
@@ -159,6 +184,7 @@ router.post('/shop/buy', activeRequired, (req, res) => {
   const resources = { ...req.user.resources };
   resources[resource] = (resources[resource] || 0) + item.amount * qty;
   const updated = db.update('users', req.user.id, { coins: coins - cost, resources });
+  ledger.record(req.user.id, -cost, `shop: ${resource}`);
   db.log({ type: 'shop', userId: req.user.id, message: `${req.user.username} bought ${item.amount * qty} ${resource} for ${cost} coins` });
   res.json({ data: { coins: updated.coins, resources: updated.resources, bought: { resource, amount: item.amount * qty, cost } } });
 });
@@ -210,7 +236,116 @@ router.post('/afk/heartbeat', activeRequired, (req, res) => {
   afkState.set(uid, last + intervals * intervalMs);
   const earned = intervals * cfg.coins;
   const updated = db.update('users', uid, { coins: (req.user.coins || 0) + earned });
+  if (earned) ledger.record(uid, earned, 'afk');
+  // "Night Owl": grinding AFK coins between 2–5am local time.
+  try { const hr = new Date().getHours(); if (hr >= 2 && hr < 5) achievements.bump(updated, 'afkNight'); } catch {}
   res.json({ data: { ...base, coins: updated.coins, earned, nextInSeconds: cfg.intervalSeconds } });
+});
+
+// ---- Daily reward ---------------------------------------------------------
+
+router.get('/account/daily', (req, res) => {
+  res.json({ data: daily.status(req.user) });
+});
+
+router.post('/account/daily/claim', activeRequired, (req, res) => {
+  const r = daily.claim(req.user);
+  if (!r.ok) return res.status(r.code === 'DISABLED' ? 403 : 409).json({ error: r.error });
+  try { achievements.evaluate(db.get('users', req.user.id)); } catch {}
+  res.json({ data: r });
+});
+
+// ---- Per-user theme + profile picture ------------------------------------
+
+const PRESET_IDS = new Set(appearance.presetList().map((p) => p.id));
+
+// Choose a personal theme preset (or null to follow the panel default).
+router.put('/account/theme', (req, res) => {
+  let preset = req.body && req.body.preset;
+  if (preset === '' || preset === 'default' || preset === null) preset = null;
+  if (preset !== null && !PRESET_IDS.has(preset)) return res.status(400).json({ error: 'Unknown theme preset' });
+  const updated = db.update('users', req.user.id, { themePreset: preset });
+  res.json({ data: { themePreset: updated.themePreset } });
+});
+
+const AVATAR_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+
+// Upload a profile picture (raw bytes; image types only, ≤ 3 MB).
+router.post('/account/avatar', express.raw({ type: () => true, limit: '3mb' }), (req, res) => {
+  const filename = String((req.query && req.query.filename) || 'avatar');
+  const ext = path.extname(filename).toLowerCase().replace('.', '').slice(0, 8);
+  if (!AVATAR_TYPES[ext]) return res.status(400).json({ error: 'Use a png, jpg, gif or webp image.' });
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: 'Empty upload' });
+  const dir = path.join(config.uploadsDir, 'avatars');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const name = `${req.user.id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}.${ext}`;
+    fs.writeFileSync(path.join(dir, name), buf);
+    // Best-effort cleanup of the user's previous avatar file.
+    const prev = req.user.avatar;
+    if (prev && /^\/uploads\/avatars\/[\w.-]+$/.test(prev)) {
+      try { fs.rmSync(path.join(config.uploadsDir, 'avatars', path.basename(prev)), { force: true }); } catch {}
+    }
+    const url = `/uploads/avatars/${name}`;
+    db.update('users', req.user.id, { avatar: url });
+    res.status(201).json({ data: { avatar: url } });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save avatar' });
+  }
+});
+
+router.delete('/account/avatar', (req, res) => {
+  const prev = req.user.avatar;
+  if (prev && /^\/uploads\/avatars\/[\w.-]+$/.test(prev)) {
+    try { fs.rmSync(path.join(config.uploadsDir, 'avatars', path.basename(prev)), { force: true }); } catch {}
+  }
+  db.update('users', req.user.id, { avatar: null });
+  res.json({ data: { avatar: null } });
+});
+
+// ---- Achievements & XP ----------------------------------------------------
+
+router.get('/achievements', (req, res) => {
+  res.json({ data: achievements.list(req.user) });
+});
+
+// ---- Server pets ----------------------------------------------------------
+
+router.get('/pets', (req, res) => {
+  res.json({ data: pets.view(req.user) });
+});
+
+router.post('/pets/buy', activeRequired, (req, res) => {
+  try { res.json({ data: pets.buy(req.user, String((req.body || {}).petId || '')) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.put('/pets/active', (req, res) => {
+  try { res.json({ data: pets.setActive(req.user, (req.body || {}).petId || null) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ---- Friends & presence ---------------------------------------------------
+
+router.post('/presence/ping', (req, res) => { presence.touch(req.user.id); res.json({ ok: true }); });
+
+router.get('/friends', (req, res) => res.json({ data: friends.list(req.user) }));
+router.post('/friends/request', activeRequired, (req, res) => {
+  try { res.json({ data: friends.request(req.user, (req.body || {}).username) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/friends/accept', (req, res) => {
+  try { res.json({ data: friends.accept(req.user, (req.body || {}).id) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/friends/decline', (req, res) => {
+  try { res.json({ data: friends.decline(req.user, (req.body || {}).id) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/friends/:id', (req, res) => {
+  try { res.json({ data: friends.remove(req.user, req.params.id) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 router.get('/servers/:id', loadServer, (req, res) => {
@@ -227,9 +362,32 @@ router.post('/servers/:id/power', loadServer, requirePerm('control.power'), asyn
   const action = (req.body && req.body.action) || '';
   if (!['start', 'stop', 'restart', 'kill'].includes(action))
     return res.status(400).json({ error: 'Invalid power action' });
+  // "Crash Survivor": reviving a server that's currently crashed.
+  if (action === 'start' || action === 'restart') {
+    try { if (pm.state(req.server.id).status === 'crashed') achievements.bump(db.get('users', req.user.id), 'crashes'); } catch {}
+  }
   const result = await pm.power(req.server, action);
   if (!result.ok) return res.status(409).json(result);
   res.json({ ok: true, action });
+});
+
+// Per-server console appearance (theme + custom ANSI palette), saved server-side.
+const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const ANSI_CODES = ['30', '31', '32', '33', '34', '35', '36', '37', '90', '91', '92', '93', '94', '95', '96', '97'];
+function sanitizeConsole(input) {
+  const b = input || {};
+  const out = { theme: ['default', 'ink', 'solarized', 'matrix', 'light', 'custom'].includes(b.theme) ? b.theme : 'default' };
+  if (HEX_RE.test(b.bg || '')) out.bg = b.bg;
+  if (HEX_RE.test(b.fg || '')) out.fg = b.fg;
+  if (b.ansi && typeof b.ansi === 'object') {
+    out.ansi = {};
+    for (const k of ANSI_CODES) if (HEX_RE.test(b.ansi[k] || '')) out.ansi[k] = b.ansi[k];
+  }
+  return out;
+}
+router.put('/servers/:id/console', loadServer, requirePerm('control.console'), (req, res) => {
+  const updated = db.update('servers', req.server.id, { console: sanitizeConsole(req.body) });
+  res.json({ data: { console: updated.console } });
 });
 
 router.post('/servers/:id/reinstall', loadServer, requireOwner, (req, res) => {
@@ -350,6 +508,7 @@ router.post('/servers/:id/backups', loadServer, requirePerm('backup'), activeReq
   try { rec = backups.create(req.server, { name: (req.body || {}).name, createdBy: req.user.id }); }
   catch (err) { return res.status(500).json({ error: err.message }); }
   db.log({ type: 'backup', userId: req.user.id, serverId: req.server.id, message: `Backup '${rec.name}' created` });
+  try { achievements.bump(db.get('users', req.user.id), 'backupsCreated'); } catch {}
   res.status(201).json({ data: serializeBackup(rec) });
 });
 

@@ -18,11 +18,17 @@ const discordReady = () => {
   return !!(d.enabled && d.clientId && d.clientSecret && d.redirectUri);
 };
 
+// Keys that must never be merged from client input — merging them walks into
+// Object.prototype (prototype pollution, CWE-1321). Even though settings are
+// admin-only, we refuse them as defense in depth.
+const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
 function deepMerge(target, patch) {
   for (const k of Object.keys(patch)) {
+    if (FORBIDDEN_KEYS.has(k)) continue; // block prototype pollution
     const pv = patch[k];
     if (pv && typeof pv === 'object' && !Array.isArray(pv)) {
-      if (!target[k] || typeof target[k] !== 'object') target[k] = {};
+      if (!Object.prototype.hasOwnProperty.call(target, k) || !target[k] || typeof target[k] !== 'object') target[k] = {};
       deepMerge(target[k], pv);
     } else {
       target[k] = pv;
@@ -36,7 +42,7 @@ const num = (v, min = 0) => Math.max(min, Math.floor(Number(v) || 0));
 /** Apply a (partial) settings patch with whitelisting + coercion. */
 function update(patch = {}) {
   const cur = JSON.parse(JSON.stringify(get()));
-  const allowed = ['economy', 'registration', 'defaults', 'limits', 'shop', 'afk', 'security'];
+  const allowed = ['economy', 'registration', 'defaults', 'limits', 'shop', 'afk', 'security', 'dailyReward', 'maintenance', 'banner', 'seasonal', 'achievements', 'pets', 'bragCards', 'statusOverview'];
   const clean = {};
   for (const k of allowed) if (patch[k] !== undefined) clean[k] = patch[k];
   deepMerge(cur, clean);
@@ -95,8 +101,60 @@ function update(patch = {}) {
     cur.shop[r].amount = num(cur.shop[r].amount, 1);
   }
 
+  // Daily reward.
+  if (!cur.dailyReward) cur.dailyReward = {};
+  cur.dailyReward.enabled = !!cur.dailyReward.enabled;
+  cur.dailyReward.coins = num(cur.dailyReward.coins);
+  cur.dailyReward.streakBonus = num(cur.dailyReward.streakBonus);
+  cur.dailyReward.maxBonus = num(cur.dailyReward.maxBonus);
+
+  // Maintenance mode.
+  if (!cur.maintenance) cur.maintenance = {};
+  cur.maintenance.enabled = !!cur.maintenance.enabled;
+  cur.maintenance.allowAdmins = cur.maintenance.allowAdmins === undefined ? true : !!cur.maintenance.allowAdmins;
+  cur.maintenance.title = (String(cur.maintenance.title || '').trim().slice(0, 100)) || "We'll be right back";
+  cur.maintenance.message = String(cur.maintenance.message || '').slice(0, 1000);
+  cur.maintenance.scheduleEnabled = !!cur.maintenance.scheduleEnabled;
+  cur.maintenance.start = String(cur.maintenance.start || '').slice(0, 40);
+  cur.maintenance.end = String(cur.maintenance.end || '').slice(0, 40);
+
+  // Broadcast banner.
+  if (!cur.banner) cur.banner = {};
+  cur.banner.enabled = !!cur.banner.enabled;
+  cur.banner.text = String(cur.banner.text || '').slice(0, 300);
+  cur.banner.style = ['info', 'warn', 'success', 'danger'].includes(cur.banner.style) ? cur.banner.style : 'info';
+
+  // Seasonal auto-themes.
+  if (!cur.seasonal) cur.seasonal = {};
+  cur.seasonal.mode = ['off', 'auto', 'halloween', 'winter', 'christmas', 'newyear'].includes(cur.seasonal.mode) ? cur.seasonal.mode : 'off';
+
+  // Achievements & pets feature flags.
+  if (!cur.achievements) cur.achievements = {};
+  cur.achievements.enabled = !!cur.achievements.enabled;
+  if (!cur.pets) cur.pets = {};
+  cur.pets.enabled = !!cur.pets.enabled;
+
+  // Brag cards + panel-wide status overview.
+  if (!cur.bragCards) cur.bragCards = {};
+  cur.bragCards.enabled = !!cur.bragCards.enabled;
+  if (!cur.statusOverview) cur.statusOverview = {};
+  cur.statusOverview.enabled = !!cur.statusOverview.enabled;
+  cur.statusOverview.title = String(cur.statusOverview.title || '').slice(0, 80);
+
   db.update('settings', 'global', cur);
   return get();
 }
 
-module.exports = { get, defaults, economyEnabled, registrationEnabled, requireApproval, afkEnabled, discord, discordReady, update };
+/** Effective maintenance state — manual toggle OR an active scheduled window. */
+function maintenanceActive() {
+  const m = (get().maintenance) || {};
+  if (m.enabled) return true;
+  if (m.scheduleEnabled && m.start && m.end) {
+    const now = Date.now();
+    const s = Date.parse(m.start), e = Date.parse(m.end);
+    if (!Number.isNaN(s) && !Number.isNaN(e) && now >= s && now <= e) return true;
+  }
+  return false;
+}
+
+module.exports = { get, defaults, economyEnabled, registrationEnabled, requireApproval, afkEnabled, discord, discordReady, update, maintenanceActive };

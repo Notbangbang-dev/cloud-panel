@@ -167,9 +167,48 @@
   function appendLine(term, { line, stream }) {
     const near = term.scrollHeight - term.scrollTop - term.clientHeight < 60;
     const cls = stream === 'in' ? 'ln in' : stream === 'err' ? 'ln err' : stream === 'sys' ? 'ln sys' : 'ln';
-    term.appendChild(h('div', { class: cls, html: CP.ansiToHtml(line) }));
+    const el = h('div', { class: cls, html: CP.ansiToHtml(line, term._ansi) });
+    if (term._filter && !el.textContent.toLowerCase().includes(term._filter)) el.style.display = 'none';
+    term.appendChild(el);
     while (term.childElementCount > 600) term.removeChild(term.firstChild);
     if (near) term.scrollTop = term.scrollHeight;
+  }
+
+  const CONSOLE_THEMES = {
+    default: { label: 'Default', bg: '', fg: '' },
+    ink: { label: 'Midnight Ink', bg: '#05070d', fg: '#cbd5e1' },
+    solarized: { label: 'Solarized', bg: '#002b36', fg: '#93a1a1' },
+    matrix: { label: 'Matrix', bg: '#001b0d', fg: '#4ade80' },
+    light: { label: 'Light', bg: '#f4f6fc', fg: '#1f2638' },
+  };
+  function applyConsoleTheme(term, settings) {
+    settings = settings || { theme: 'default' };
+    const preset = CONSOLE_THEMES[settings.theme] || CONSOLE_THEMES.default;
+    term.style.background = settings.bg || preset.bg || '';
+    term.style.color = settings.fg || preset.fg || '';
+    term._ansi = (settings.ansi && Object.keys(settings.ansi).length) ? settings.ansi : null;
+  }
+
+  function downloadBragCard(S) {
+    const c = document.createElement('canvas'); c.width = 1200; c.height = 630;
+    const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 1200, 630); g.addColorStop(0, '#0b0f1a'); g.addColorStop(1, '#1a2136');
+    x.fillStyle = g; x.fillRect(0, 0, 1200, 630);
+    const g2 = x.createLinearGradient(0, 0, 1200, 0); g2.addColorStop(0, '#22d3ee'); g2.addColorStop(0.5, '#6366f1'); g2.addColorStop(1, '#a855f7');
+    x.fillStyle = g2; x.fillRect(0, 0, 1200, 12);
+    x.fillStyle = '#e7ecf6'; x.font = 'bold 64px sans-serif'; x.fillText(String(S.server.name).slice(0, 22), 70, 150);
+    x.fillStyle = '#8a97b4'; x.font = '28px sans-serif'; x.fillText(S.server.egg ? S.server.egg.name : 'Cloud Panel server', 72, 196);
+    const running = S.status === 'running';
+    x.fillStyle = running ? '#4ade80' : '#8a97b4'; x.font = 'bold 30px sans-serif';
+    x.fillText(running ? '● ONLINE' : '○ ' + String(S.status || 'offline').toUpperCase(), 72, 262);
+    const s = S.stats || {};
+    const rows = [['Uptime', running ? fmt.duration(s.uptime) : '—'], ['CPU', `${(s.cpu || 0).toFixed(1)}%`], ['Memory', `${fmt.bytes(s.memory || 0)} / ${fmt.mib(S.server.limits.memory)}`], ['Disk', fmt.bytes(s.disk || 0)]];
+    x.font = '32px sans-serif';
+    rows.forEach((r, i) => { const y = 360 + i * 58; x.fillStyle = '#8a97b4'; x.fillText(r[0], 72, y); x.fillStyle = '#e7ecf6'; x.fillText(String(r[1]), 380, y); });
+    x.fillStyle = '#818cf8'; x.font = 'bold 26px sans-serif'; const brand = (CP.app.brand && CP.app.brand.name) || 'Cloud Panel';
+    x.fillText(brand, 72, 596); x.fillStyle = '#5c6788'; x.font = '22px sans-serif'; x.fillText('· Deploy. Scale. Dominate.', 72 + brand.length * 15 + 14, 596);
+    c.toBlob((blob) => { if (!blob) return; const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${String(S.server.name).replace(/[^\w.-]/g, '_')}-cloudpanel.png`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); });
+    CP.ui.toast('Brag card downloaded 📸', 'ok');
   }
 
   function tabConsole(S, root) {
@@ -202,6 +241,58 @@
 
     const term = h('div', { class: 'term' });
     S.term = term;
+
+    // Console toolbar: search, jump-to-error, theme, and (optional) brag card.
+    const search = h('input', { placeholder: 'Search logs…', style: { flex: 1, minWidth: '120px' } });
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      term._filter = q;
+      [...term.children].forEach((el) => { el.style.display = (!q || el.textContent.toLowerCase().includes(q)) ? '' : 'none'; });
+    });
+    let errIdx = -1;
+    const jumpError = () => {
+      const errs = [...term.children].filter((el) => el.style.display !== 'none' && (el.classList.contains('err') || /error|exception|fail|fatal/i.test(el.textContent)));
+      if (!errs.length) return CP.ui.toast('No errors in the log', 'info');
+      errIdx = (errIdx + 1) % errs.length;
+      const el = errs[errIdx];
+      el.scrollIntoView({ block: 'center' });
+      el.style.outline = '1px solid var(--red, #f87171)';
+      setTimeout(() => { el.style.outline = ''; }, 1200);
+    };
+    // Per-server console appearance (theme + custom ANSI palette), saved server-side.
+    let csettings = Object.assign({ theme: 'default' }, S.server.console || {});
+    const rerender = () => { CP.clear(term); S.logBuffer.forEach((l) => appendLine(term, l)); term.scrollTop = term.scrollHeight; };
+    const saveConsole = async () => { try { await CP.api.saveConsole(S.server.id, csettings); S.server.console = csettings; } catch (e) { CP.ui.toast(e.message, 'err'); } };
+    const themeSel = h('select', { title: 'Console theme' },
+      ...Object.entries(CONSOLE_THEMES).map(([id, t]) => h('option', { value: id }, t.label)),
+      h('option', { value: 'custom' }, 'Custom…'));
+    themeSel.value = CONSOLE_THEMES[csettings.theme] ? csettings.theme : 'custom';
+    function openColors() {
+      const cur = csettings.ansi || {};
+      const defaults = { 31: '#fca5a5', 32: '#86efac', 33: '#fde047', 34: '#93c5fd', 35: '#d8b4fe', 36: '#67e8f9' };
+      const bg = h('input', { type: 'color', value: csettings.bg || '#0b0f1a' });
+      const fg = h('input', { type: 'color', value: csettings.fg || '#e7ecf6' });
+      const inputs = [['31', 'Red'], ['32', 'Green'], ['33', 'Yellow'], ['34', 'Blue'], ['35', 'Magenta'], ['36', 'Cyan']].map(([code, label]) => ({ code, label, i: h('input', { type: 'color', value: cur[code] || defaults[code] }) }));
+      const field = (l, i) => h('label', { class: 'field' }, h('span', {}, l), i);
+      const save = h('button', { class: 'btn primary', html: `${icon('save', 15)} Save palette` });
+      const ref = CP.ui.modal({ title: 'Custom console colors', size: 'md',
+        body: h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px' } }, field('Background', bg), field('Text', fg), ...inputs.map((x) => field(x.label, x.i))),
+        footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'), save] });
+      save.onclick = () => { const ansi = {}; inputs.forEach((x) => { ansi[x.code] = x.i.value; }); csettings = { theme: 'custom', bg: bg.value, fg: fg.value, ansi }; applyConsoleTheme(term, csettings); rerender(); saveConsole(); themeSel.value = 'custom'; ref.close(); CP.ui.toast('Console palette saved', 'ok'); };
+    }
+    themeSel.addEventListener('change', () => {
+      if (themeSel.value === 'custom') return openColors();
+      csettings = { theme: themeSel.value };
+      applyConsoleTheme(term, csettings); rerender(); saveConsole();
+    });
+    const toolbar = h('div', { class: 'fm-bar', style: { gap: '8px', marginBottom: '10px' } },
+      h('span', { html: icon('search', 15), style: { color: 'var(--faint)' } }), search,
+      h('button', { class: 'btn sm ghost', html: `${icon('alert', 13)} Next error`, onclick: jumpError }),
+      themeSel,
+      h('button', { class: 'btn sm ghost icon', title: 'Custom colors', html: icon('palette', 14), onclick: openColors }),
+      CP.app.bragCardsEnabled ? h('button', { class: 'btn sm', html: `${icon('image', 13)} Brag card`, onclick: () => downloadBragCard(S) }) : null);
+
+    applyConsoleTheme(term, csettings);
     S.logBuffer.forEach((l) => appendLine(term, l));
     term.scrollTop = term.scrollHeight;
 
@@ -218,7 +309,7 @@
       else if (e.key === 'ArrowDown') { hp = Math.min(hist.length, hp + 1); input.value = hist[hp] || ''; }
     });
 
-    root.append(tiles, term, h('div', { class: 'console-input', style: { marginTop: '14px' } }, input));
+    root.append(tiles, toolbar, term, h('div', { class: 'console-input', style: { marginTop: '14px' } }, input));
     S.tiles.update();
   }
 

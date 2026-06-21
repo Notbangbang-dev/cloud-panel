@@ -117,6 +117,7 @@ function serializeServer(server, { detail = false, user = null } = {}) {
     ...base,
     startup: server.startup,
     environment: server.environment,
+    console: server.console || null,
     additionalAllocations: additional,
     eggDetail: egg
       ? { id: egg.id, name: egg.name, docker: egg.docker, variables: egg.variables, stopCommand: egg.stopCommand, installer: egg.installer || 'none' }

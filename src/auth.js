@@ -22,6 +22,19 @@ function verifyToken(token) {
 }
 
 /**
+ * A short-lived session token for an admin to "view as" another user. It's a
+ * normal session for the target (so the panel behaves exactly as they see it)
+ * but carries an `imp` claim recording which admin issued it, for auditing.
+ */
+function signImpersonation(targetUser, adminId) {
+  return jwt.sign(
+    { sub: targetUser.id, username: targetUser.username, admin: !!targetUser.admin, tv: targetUser.tokenVersion || 0, imp: adminId },
+    config.jwtSecret,
+    { expiresIn: '1h' }
+  );
+}
+
+/**
  * Short-lived, single-purpose token for things that must carry auth in a URL
  * (WebSocket upgrade, file downloads) where an Authorization header isn't
  * possible. Scoped + short TTL so a leaked URL can't be replayed as a session.
@@ -99,6 +112,7 @@ function adminRequired(req, res, next) {
 
 module.exports = {
   sign,
+  signImpersonation,
   signTicket,
   signState,
   verifyState,

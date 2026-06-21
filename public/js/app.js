@@ -15,6 +15,12 @@
     needsSetup: false,
     economyEnabled: false,
     afkEnabled: false,
+    achievementsEnabled: false,
+    petsEnabled: false,
+    bragCardsEnabled: false,
+    banner: null,
+    maintenance: null,
+    dailyReward: null,
     ports: { web: 8080, sftp: 5657 },
     brand: { name: 'Cloud Panel', tagline: 'Deploy. Scale. Dominate.' },
     _cleanups: [],
@@ -29,9 +35,13 @@
       CP.api.token = null;
       this.user = null;
       this.shell = null;
+      if (CP.appearance && CP.appearance.applyUserPreset) CP.appearance.applyUserPreset(null);
       CP.ui.toast('Signed out', 'info');
       this.go('/login');
     },
+
+    /** Rebuild the shell chrome (sidebar avatar, coins…) after a profile change. */
+    refreshChrome() { this.shell = null; this.render(); },
 
     runCleanups() {
       this._cleanups.forEach((fn) => { try { fn(); } catch {} });
@@ -65,12 +75,31 @@
         this.needsSetup = !!s.needsSetup;
       } catch {}
 
+      // Public banner / maintenance state (works signed-out too).
+      try {
+        const cfg = await CP.api.authConfig();
+        this.banner = cfg.banner || null;
+        this.maintenance = cfg.maintenance || null;
+      } catch {}
+
       if (CP.api.token) {
         try {
           const me = await CP.api.me();
           this.user = me.user;
           this.economyEnabled = !!me.economyEnabled;
           this.afkEnabled = !!me.afkEnabled;
+          this.achievementsEnabled = !!me.achievementsEnabled;
+          this.petsEnabled = !!me.petsEnabled;
+          this.bragCardsEnabled = !!me.bragCardsEnabled;
+          this.dailyReward = me.dailyReward || null;
+          if (me.banner) this.banner = me.banner;
+          if (me.maintenance) this.maintenance = me.maintenance;
+          if (CP.appearance && CP.appearance.applyUserPreset) CP.appearance.applyUserPreset(this.user.themePreset);
+          // Keep presence fresh (in-memory on the server).
+          if (!this._presenceTimer) {
+            CP.api.presencePing().catch(() => {});
+            this._presenceTimer = setInterval(() => CP.api.presencePing().catch(() => {}), 60000);
+          }
         } catch { CP.api.token = null; }
       }
 
@@ -91,6 +120,9 @@
       if (head === 'account') return { route: 'account', params: {} };
       if (head === 'shop') return { route: 'shop', params: {} };
       if (head === 'afk') return { route: 'afk', params: {} };
+      if (head === 'achievements') return { route: 'achievements', params: {} };
+      if (head === 'pets') return { route: 'pets', params: {} };
+      if (head === 'friends') return { route: 'friends', params: {} };
       if (head === 'terms') return { route: 'terms', params: {} };
       if (head === 'privacy') return { route: 'privacy', params: {} };
       if (head === 'status') return { route: 'status', params: { slug: rest[0] } };
@@ -100,6 +132,8 @@
 
     async render() {
       this.runCleanups();
+      this.renderImpersonate();
+      this.renderBanner();
       const appRoot = document.getElementById('app');
       const r = this.parse();
 
@@ -119,6 +153,13 @@
         return;
       }
       if (r.route === 'login') { this.go('/'); return; }
+
+      // Maintenance mode — non-admins see a notice instead of the panel.
+      if (!this.user.admin && this.maintenance && this.maintenance.enabled && CP.pages.maintenance) {
+        this.shell = null;
+        CP.pages.maintenance(appRoot);
+        return;
+      }
 
       // Awaiting-approval / declined users get a dedicated screen (no panel).
       if (!this.user.admin && (this.user.status === 'pending' || this.user.status === 'declined') && CP.pages.pending) {
@@ -154,6 +195,9 @@
       const navDefs = [{ route: 'dashboard', label: 'Dashboard', icon: 'dashboard', path: '/' }];
       if (this.economyEnabled) navDefs.push({ route: 'shop', label: 'Shop', icon: 'cart', path: '/shop' });
       if (this.afkEnabled) navDefs.push({ route: 'afk', label: 'AFK', icon: 'coin', path: '/afk' });
+      if (this.achievementsEnabled) navDefs.push({ route: 'achievements', label: 'Achievements', icon: 'zap', path: '/achievements' });
+      if (this.petsEnabled) navDefs.push({ route: 'pets', label: 'Pets', icon: 'rocket', path: '/pets' });
+      navDefs.push({ route: 'friends', label: 'Friends', icon: 'users', path: '/friends' });
       navDefs.push({ route: 'account', label: 'Account', icon: 'settings', path: '/account' });
       const navItems = navDefs.map((n) =>
         h('div', { class: 'nav-item', dataset: { route: n.route }, html: `${icon(n.icon, 18)}<span>${n.label}</span>`, onclick: () => this.go(n.path) }));
@@ -175,7 +219,9 @@
         h('div', { class: 'spacer' }),
         this.economyEnabled ? coinsEl : null,
         h('div', { class: 'side-user', onclick: () => this.go('/account') },
-          h('div', { class: 'avatar' }, initials),
+          u.avatar
+            ? h('img', { class: 'avatar', src: u.avatar, alt: '', style: { objectFit: 'cover' } })
+            : h('div', { class: 'avatar' }, initials),
           h('div', { class: 'meta' }, h('b', {}, u.username), h('span', {}, u.email)),
           h('span', { class: 'btn ghost icon', title: 'Sign out', html: icon('logout', 16), onclick: (e) => { e.stopPropagation(); this.logout(); } }))
       );
@@ -211,6 +257,46 @@
     setCoins(n) {
       if (this.user) this.user.coins = n;
       if (this.shell && this.shell.renderCoins) this.shell.renderCoins();
+    },
+
+    /** Admin "view as user" bar — restores the admin session on exit. */
+    renderImpersonate() {
+      const el = document.getElementById('cp-impersonate');
+      if (!el) return;
+      const adminTok = sessionStorage.getItem('cp_imp_admin');
+      if (!adminTok) { el.style.display = 'none'; CP.clear(el); return; }
+      const name = sessionStorage.getItem('cp_imp_name') || 'user';
+      CP.clear(el);
+      el.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:14px;padding:8px 16px;font-size:13px;font-weight:600;background:rgba(248,113,113,.16);color:#fca5a5;border-bottom:1px solid rgba(248,113,113,.5);position:relative;z-index:61;';
+      el.appendChild(h('span', {}, `👁 Viewing as ${name}`));
+      el.appendChild(h('button', { class: 'btn sm', onclick: () => this.exitImpersonation() }, 'Exit'));
+    },
+
+    exitImpersonation() {
+      const adminTok = sessionStorage.getItem('cp_imp_admin');
+      sessionStorage.removeItem('cp_imp_admin');
+      sessionStorage.removeItem('cp_imp_name');
+      if (adminTok) CP.api.token = adminTok;
+      location.href = '/admin/users';
+    },
+
+    /** Render (or hide) the global broadcast banner above everything. */
+    renderBanner() {
+      const el = document.getElementById('cp-banner');
+      if (!el) return;
+      const b = this.banner;
+      if (!b || !b.enabled || !b.text) { el.style.display = 'none'; el.textContent = ''; return; }
+      const palette = {
+        info: { bg: 'rgba(34,211,238,.12)', fg: '#a5f3fc', bd: 'rgba(34,211,238,.35)' },
+        warn: { bg: 'rgba(253,224,71,.12)', fg: '#fde68a', bd: 'rgba(253,224,71,.4)' },
+        success: { bg: 'rgba(52,211,153,.12)', fg: '#86efac', bd: 'rgba(52,211,153,.35)' },
+        danger: { bg: 'rgba(248,113,113,.12)', fg: '#fca5a5', bd: 'rgba(248,113,113,.45)' },
+      };
+      const p = palette[b.style] || palette.info;
+      el.textContent = b.text; // text node — safe from HTML injection
+      el.style.cssText =
+        'display:block;text-align:center;padding:9px 18px;font-size:13px;font-weight:600;' +
+        `background:${p.bg};color:${p.fg};border-bottom:1px solid ${p.bd};position:relative;z-index:60;`;
     },
 
     setActiveNav(route) {

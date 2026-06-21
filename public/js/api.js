@@ -109,6 +109,9 @@
     /* historical metrics */
     serverMetrics(sid, range) { return this.get(`/servers/${sid}/metrics?range=${range || 86400}`); },
 
+    /* per-server console appearance */
+    saveConsole(sid, cfg) { return this.put(`/servers/${sid}/console`, cfg); },
+
     /* public status page (config) */
     statusPageConfig(sid) { return this.get(`/servers/${sid}/statuspage`); },
     saveStatusPage(sid, body) { return this.put(`/servers/${sid}/statuspage`, body); },
@@ -148,9 +151,48 @@
     shopBuy(resource, quantity) { return this.post('/shop/buy', { resource, quantity }); },
     afkInfo() { return this.get('/afk'); },
     afkHeartbeat(sid) { return this.post('/afk/heartbeat', { sid }); },
+    dailyInfo() { return this.get('/account/daily'); },
+    dailyClaim() { return this.post('/account/daily/claim'); },
+
+    /* per-user theme + profile picture */
+    appearancePresets() { return this.get('/appearance/presets'); },
+    accountTheme(preset) { return this.put('/account/theme', { preset }); },
+    deleteAvatar() { return this.del('/account/avatar'); },
+    async uploadAvatar(file) {
+      const res = await fetch('/api/account/avatar?filename=' + encodeURIComponent(file.name), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream', ...(this.token ? { Authorization: 'Bearer ' + this.token } : {}) },
+        body: file,
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || `Upload failed (${res.status})`);
+      return d.data;
+    },
+
+    /* achievements & pets */
+    achievements() { return this.get('/achievements'); },
+    pets() { return this.get('/pets'); },
+    petBuy(petId) { return this.post('/pets/buy', { petId }); },
+    petActive(petId) { return this.put('/pets/active', { petId }); },
+
+    /* friends & presence */
+    friends() { return this.get('/friends'); },
+    friendRequest(username) { return this.post('/friends/request', { username }); },
+    friendAccept(id) { return this.post('/friends/accept', { id }); },
+    friendDecline(id) { return this.post('/friends/decline', { id }); },
+    friendRemove(id) { return this.del(`/friends/${id}`); },
+    presencePing() { return this.post('/presence/ping'); },
 
     /* admin economy/access */
     adminSettings() { return this.get('/admin/settings'); },
+    adminAchievements() { return this.get('/admin/achievements'); },
+    adminAddAchievement(body) { return this.post('/admin/achievements', body); },
+    adminDeleteAchievement(id) { return this.del(`/admin/achievements/${id}`); },
+    adminAnalytics() { return this.get('/admin/analytics'); },
+    adminImpersonate(id) { return this.post(`/admin/users/${id}/impersonate`); },
+    adminCreateEgg(body) { return this.post('/admin/eggs', body); },
+    adminUpdateEgg(id, body) { return this.put(`/admin/eggs/${id}`, body); },
+    adminDeleteEgg(id) { return this.del(`/admin/eggs/${id}`); },
     adminUpdateSettings(patch) { return this.put('/admin/settings', patch); },
     adminApprove(id) { return this.post(`/admin/users/${id}/approve`); },
     adminDecline(id) { return this.post(`/admin/users/${id}/decline`); },

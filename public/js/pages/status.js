@@ -5,9 +5,38 @@
   const { h, icon, fmt } = CP;
   CP.pages = CP.pages || {};
 
+  function statTile(v, l) {
+    return h('div', { class: 'card tile', style: { padding: '14px' } },
+      h('div', { class: 'v', style: { fontSize: '26px' } }, String(v)),
+      h('div', { class: 'faint', style: { fontSize: '12px' } }, l));
+  }
+
+  async function renderOverview(appRoot, ctx) {
+    const card = h('div', { class: 'auth-card', style: { maxWidth: '460px' } }, CP.spinner('Loading status…'));
+    appRoot.appendChild(h('div', { class: 'auth' }, card,
+      h('div', { class: 'auth-legal' }, h('a', { onclick: () => CP.app.go('/') }, 'Powered by Cloud Panel'))));
+    async function tick() {
+      let d;
+      try { const r = await fetch('/api/status'); if (!r.ok) throw new Error('The network status page is not available.'); d = (await r.json()).data; }
+      catch (e) { CP.clear(card); card.appendChild(CP.empty('alert', e.message)); return; }
+      CP.clear(card);
+      card.append(
+        h('div', { class: 'auth-brand', style: { justifyContent: 'center' } },
+          h('img', { src: '/img/logo.svg', alt: '' }), h('div', {}, h('h1', { style: { fontSize: '20px' } }, d.title))),
+        h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginTop: '16px', textAlign: 'center' } },
+          statTile(d.online, 'Online'), statTile(d.total, 'Servers'), statTile(d.nodes, 'Nodes')),
+        h('div', { class: 'muted', style: { textAlign: 'center', fontSize: '11.5px', marginTop: '16px' } },
+          `Updated ${new Date(d.updatedAt).toLocaleTimeString()} · auto-refreshing`));
+    }
+    await tick();
+    const timer = setInterval(tick, 10000);
+    if (ctx && ctx.onCleanup) ctx.onCleanup(() => clearInterval(timer));
+  }
+
   CP.pages.status = async function (appRoot, ctx) {
     CP.clear(appRoot);
     const slug = (ctx && ctx.params && ctx.params.slug) || (location.pathname.split('/').filter(Boolean)[1] || '');
+    if (!slug) return renderOverview(appRoot, ctx);
 
     const card = h('div', { class: 'auth-card', style: { maxWidth: '480px' } }, CP.spinner('Loading status…'));
     const wrap = h('div', { class: 'auth' }, card,

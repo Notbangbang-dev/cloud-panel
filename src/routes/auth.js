@@ -11,6 +11,17 @@ const { rateLimit } = require('../middleware');
 
 const router = express.Router();
 
+/** Public-safe view of the broadcast banner (shown signed-in or out). */
+function publicBanner() {
+  const b = db.settings().banner || {};
+  return { enabled: !!b.enabled && !!(b.text && b.text.trim()), text: b.text || '', style: b.style || 'info' };
+}
+/** Public-safe view of maintenance mode. */
+function publicMaintenance() {
+  const m = db.settings().maintenance || {};
+  return { enabled: !!m.enabled, title: m.title || "We'll be right back", message: m.message || '' };
+}
+
 const loginLimiter = rateLimit({ windowMs: 60000, max: 10, message: 'Too many login attempts — wait a minute and try again.' });
 const registerLimiter = rateLimit({ windowMs: 60000, max: 5, message: 'Too many sign-up attempts — wait a minute and try again.' });
 
@@ -23,6 +34,8 @@ router.get('/config', (req, res) => {
     economyEnabled: settings.economyEnabled(),
     afkEnabled: settings.economyEnabled() && settings.afkEnabled(),
     discordEnabled: settings.discordReady(),
+    banner: publicBanner(),
+    maintenance: publicMaintenance(),
   });
 });
 
@@ -193,11 +206,18 @@ function resolveDiscordUser(du, d) {
 }
 
 router.get('/me', auth.authRequired, (req, res) => {
+  const s = db.settings();
   res.json({
     user: auth.publicUser(req.user),
     brand: config.brand,
     economyEnabled: settings.economyEnabled(),
     afkEnabled: settings.economyEnabled() && settings.afkEnabled(),
+    dailyReward: { enabled: settings.economyEnabled() && !!(s.dailyReward && s.dailyReward.enabled) },
+    achievementsEnabled: !!(s.achievements && s.achievements.enabled),
+    petsEnabled: settings.economyEnabled() && !!(s.pets && s.pets.enabled),
+    bragCardsEnabled: !!(s.bragCards && s.bragCards.enabled),
+    banner: publicBanner(),
+    maintenance: publicMaintenance(),
   });
 });
 

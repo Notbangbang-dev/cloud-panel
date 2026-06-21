@@ -4,6 +4,231 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.1] — 2026-06-21
+
+> Upgrades five 2.1 features from "lite" to full builds. All additive.
+
+### ✨ Improved
+- **Per-server custom ANSI palettes** — the console theme is now saved
+  **per server** (not per browser) and you can set a fully **custom palette**
+  (background, text + the 6 ANSI colors) via a color picker. (`PUT /api/servers/:id/console`)
+- **Scheduled maintenance windows** — maintenance can auto-enable for a
+  **start→end** window (not just an on/off toggle); the gate uses the effective
+  state.
+- **Animated seasonal effects** — seasons now render real particles:
+  **snow** (winter/christmas), drifting **embers** (halloween) and **confetti**
+  (new year) — respecting `prefers-reduced-motion`.
+- **Economy flow chart** — Admin → Analytics now shows real **coins earned vs
+  spent** per day, backed by a new coin **ledger** (daily/AFK/shop/pets/admin).
+- **Friends → share a server** — one click on a friend adds them as a **subuser**
+  with the permissions you choose.
+
+### 🔧 Notes
+- New `ledger` collection + `maintenance.{scheduleEnabled,start,end}` settings
+  migrate automatically.
+
+## [2.1.0] — 2026-06-21
+
+> Builds on v2 with creator tools, social, and sharing. All additive — update
+> with `sudo cloud-panel-update`.
+
+### 🚀 Added
+- **Egg builder (admin)** 🥚 — create, edit and delete server types right in
+  **Admin → Eggs**: name, category, Docker image, startup command, stop command,
+  description and a full **variables** editor — no JSON. Custom eggs are
+  manual-install; editing a built-in **keeps its auto-installer**.
+  (`POST/PUT/DELETE /api/admin/eggs`)
+- **Friends & presence** 🤝 — a new **Friends** tab: send/accept/decline friend
+  requests by username and see who's **online** (live, in-memory presence with a
+  60s heartbeat). (`/api/friends`, `/api/presence/ping`)
+- **Console upgrades** 🖥️ — in-console **log search/filter**, a **Next error**
+  jump button, and **5 console themes** (saved per browser).
+- **Brag cards** 🃏 — export a shareable **PNG** of a server's stats (name,
+  status, uptime, CPU/RAM/disk, branding) from the console. Admin-toggleable.
+- **Network status page** 🌐 — an optional public **/status** overview (total
+  servers, online count, nodes), configurable title, toggled in Admin → Settings.
+
+### 🔧 Notes
+- New per-user fields (`friends`, `friendRequests`) and the `bragCards` /
+  `statusOverview` settings migrate automatically on upgrade.
+- Presence is ephemeral (in-memory) and resets on restart by design.
+
+## [2.0.0] — 2026-06-21
+
+> **Cloud Panel v2 is here.** 🎉 The economy gets real, the panel gets personal,
+> and admins get superpowers. All migrations are additive — update with
+> `sudo cloud-panel-update`. (Consolidates the 2.0.0-beta.1 → beta.5 line.)
+
+### 💸 Economy & self-service
+- **Self-service resources** — owners change RAM/CPU/disk/backups/databases per
+  server, bounded by their account quota (`PUT /servers/:id/build`).
+- **Databases economy** — buy database slots in the shop; backups **and**
+  databases are drawn from your quota.
+- **Daily reward** 🎁 — claim coins once per day with an optional **streak
+  bonus**. Admin-configurable (coins/day, streak, cap).
+
+### 🎨 Personalization
+- **Profile pictures** 🖼️ — upload an avatar (png/jpg/gif/webp); shown in the
+  sidebar; admins can clear one.
+- **Per-user themes** 🌗 — pick your own palette from 9 presets, saved to your
+  profile, applied only for you.
+- **Seasonal auto-themes** 🍂 — Halloween / Winter / Christmas / New Year / Auto
+  (by date), toggled in Admin → Settings.
+
+### 🏅 Gamification
+- **Achievements & XP** — a new tab with an XP/level bar and badges; 9 built-ins
+  auto-unlock (Backup Hoarder, Crash Survivor, Night Owl…). Admins toggle it and
+  **add custom achievements** (Admin → Achievements).
+- **Server pets** 🐾 — a coin-bought Tamagotchi (no default — buy your first)
+  that reacts to your fleet's health. Admin-toggleable.
+
+### 🛡️ Admin superpowers
+- **Panel analytics** — a new Admin → Analytics tab: signups (14-day chart),
+  user/server/node totals, coins in circulation, servers-by-type, top balances.
+- **View as user (impersonation)** — open the panel exactly as any member sees
+  it, with a persistent banner and one-click exit (1-hour scoped, audited).
+- **Maintenance mode** 🛠️ — lock non-admins out with a custom notice; admins
+  keep full access.
+- **Broadcast banner** 📣 — a site-wide announcement bar (4 styles) across the
+  panel and login screen.
+
+### 🔒 Security (from the v2 hardening pass)
+- SSRF egress guard on all server-side downloads; prototype-pollution guard on
+  settings; secrets locked to `0600` even without full isolation; trust-proxy
+  off by default in the installer; the Discord bot re-checks permissions
+  server-side. See `SECURITY.md`.
+
+### 🔧 Notes
+- New collections (`achievements`) and user fields (`avatar`, `themePreset`,
+  `xp`, `achievements`, `stats`, `pets`, `activePet`, `dailyStreak`,
+  `lastDailyAt`) and settings are created automatically on upgrade.
+
+---
+
+<details><summary>v2 beta history (2.0.0-beta.1 → beta.5)</summary>
+
+## [2.0.0-beta.5] — 2026-06-21
+
+> v2 gamification drop. All additive — update with `sudo cloud-panel-update`.
+
+### 🚀 Added
+
+- **Achievements & XP** 🏅 — a new **Achievements** tab with an XP/level bar and
+  a badge grid. 9 built-ins unlock automatically (Liftoff, Fleet Commander,
+  Backup Hoarder, **Crash Survivor**, **Night Owl**, Dedicated, Loaded, Locked
+  Down…) from your stats. Admins toggle the feature and **add custom
+  achievements** (icon, XP, and an "unlock when *stat* ≥ *value*" rule) in
+  **Admin → Achievements**. New `GET /api/achievements` + admin CRUD.
+- **Server Pets** 🐾 — a coin-bought Tamagotchi: a new **Pets** tab with a shop
+  (9 pets, no default — you buy your first), an equip/unequip collection, and a
+  **mascot that reacts to your fleet's health** (happy when servers are healthy,
+  stressed when RAM is near full, asleep when everything's offline). Admin
+  toggle; requires the economy. New `GET /api/pets`, `POST /api/pets/buy`,
+  `PUT /api/pets/active`.
+
+### 🔧 Notes
+
+- New user fields (`achievements`, `xp`, `stats`, `pets`, `activePet`), the
+  `achievements` collection, and the `achievements`/`pets` settings are created
+  automatically on upgrade.
+- XP bumps are best-effort and never block core actions (backup, power, AFK,
+  daily, server-create hooks).
+
+## [2.0.0-beta.4] — 2026-06-21
+
+> v2 personalization drop. All additive — update with `sudo cloud-panel-update`.
+
+### 🚀 Added
+
+- **Profile pictures** 🖼️ — upload an avatar (png/jpg/gif/webp, ≤ 3 MB) in
+  **Account → Appearance**; it shows in the sidebar. Old avatars are cleaned up
+  on replace, and admins can clear a user's avatar from the user editor.
+- **Per-user themes** 🌗 — pick any of the 9 built-in palettes as your **own**
+  theme (saved to your profile, applied only for you) without changing the
+  panel-wide theme. New `GET /api/appearance/presets` +
+  `GET /api/appearance/preset/:id` and `PUT /api/account/theme`.
+- **Seasonal auto-themes** 🍂 — **Admin → Settings** can layer a festive accent
+  palette over the panel: **Halloween**, **Winter**, **Christmas**, **New Year**,
+  or **Auto** (picks by the calendar date). Toggle to **Off** any time.
+
+### 🔧 Notes
+
+- New per-user fields (`avatar`, `themePreset`) and the `seasonal` setting are
+  added automatically on upgrade.
+- Avatar uploads are stored under `data/uploads/avatars/` and served at
+  `/uploads`. Image types only (no SVG).
+
+## [2.0.0-beta.3] — 2026-06-20
+
+> First feature drop of the v2 cycle. All additive — update with
+> `sudo cloud-panel-update`. (More v2 features are landing in batches.)
+
+### 🚀 Added
+
+- **Daily reward** 🎁 — members can claim coins once per day, with an optional
+  **streak bonus** for consecutive days (resets if you miss a day). A claim card
+  appears on the dashboard. Fully configurable in **Admin → Settings → Daily
+  reward** (enable, coins/day, streak bonus, max bonus); requires the economy.
+- **Maintenance mode** 🛠️ — flip the panel into maintenance from **Admin →
+  Settings**. Non-admins get a themed "be right back" notice (custom title +
+  message) and the entire client API is locked for them; **admins keep full
+  access** so you can keep working. New `503` + `maintenance:true` API contract.
+- **Broadcast banner** 📣 — show a site-wide banner across the panel **and the
+  login screen** (info / warning / success / danger styles), set in **Admin →
+  Settings**. Banner text renders as plain text (no HTML injection).
+
+### 🔧 Notes
+
+- Settings and per-user fields (`lastDailyAt`, `dailyStreak`, `xp`) are added
+  automatically on upgrade — all migrations are additive.
+- Daily rewards reset on the **UTC** day boundary.
+
+## [2.0.0-beta.2] — 2026-06-20
+
+> **Security hardening release** (full self-audit). No breaking changes — update
+> with `sudo cloud-panel-update`. After updating, regenerate or review your
+> `.env` (see the trust-proxy note below).
+
+### 🔒 Security
+
+- **SSRF guard on all server-side downloads.** The Modrinth **modpack** installer
+  fetched every URL listed in a pack's `modrinth.index.json` with no validation,
+  so a crafted pack could make the panel request internal services (e.g. the
+  cloud metadata endpoint `169.254.169.254`, `localhost`, RFC1918 hosts). A new
+  egress guard (`src/services/nettrust.js`) now requires **https to a public
+  host** — with DNS resolution checked against private ranges (anti DNS-rebind) —
+  for every fetch in the installers and the plugin/mod downloader.
+- **Installer no longer ships a rate-limit bypass.** `scripts/install.sh` wrote
+  `CP_TRUST_PROXY=1` while exposing the panel port **directly** (no proxy). That
+  let anyone spoof `X-Forwarded-For` to forge `req.ip` and bypass login / SFTP
+  brute-force limits. New installs now default to `CP_TRUST_PROXY=0`; set it to
+  the number of hops only when actually behind a reverse proxy.
+- **Prototype-pollution hardening.** The admin settings merge (`deepMerge`) now
+  rejects `__proto__` / `prototype` / `constructor` keys (CWE-1321), so a settings
+  payload can no longer reach `Object.prototype`.
+- **Panel secrets are locked down even without full isolation.** On boot the
+  panel now best-effort `chmod 600`s `data/.jwt-secret`, the database, the SFTP
+  host key and `.env` (so other OS users can't read them), and logs a clear
+  **C1 warning** when servers run unisolated while registration is open.
+- **Discord bot — permissions re-checked server-side.** Slash commands now
+  verify the caller's permissions in-handler instead of trusting Discord's
+  *default* permissions alone (which a guild admin can loosen via Integrations).
+- **Docs/UX:** removed the unused `CLOUDPANEL_*` admin-credential fields from the
+  bot's `.env.example` (the bot doesn't control the panel — don't store panel
+  passwords there); the theme-upload error no longer lists SVG (it's blocked);
+  removed a dead, weaker path-join helper in the SFTP server.
+- **Website** now sends a Content-Security-Policy and `X-Frame-Options` /
+  `Referrer-Policy` / `Permissions-Policy` (both the Node server and Vercel).
+
+### 🔧 Notes
+
+- The SSRF guard validates the **initial** URL of each download; redirect targets
+  are not re-validated (a known, hard problem) — for fully untrusted users prefer
+  the documented container/per-user isolation. See `SECURITY.md`.
+- True protection against server **code** reading panel secrets still requires
+  isolation (`CP_SERVER_UID/GID` as root) or containers — this release adds
+  defense-in-depth and louder warnings, not a sandbox.
+
 ## [2.0.0-beta.1] — 2026-06-20
 
 ### 🐛 Fixed — boot crash on upgrade (hotfix)
@@ -15,40 +240,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
   It now uses `backend.all('servers').filter(...)`. Verified against a simulated
   pre-v2 install (existing user missing the new `databases` quota).
 
-## [2.0.0-beta] — 2026-06-20
-
-> **v2 beta.** The economy gets real, self-service resource management. v2 proper
-> will bring much more (and proper balancing) — this is the foundation.
-
-### 🚀 Added — self-service resources & a databases economy
-
-- **Edit your own server's resources** — a new **Settings → Resources** panel lets
-  owners change **RAM, CPU, disk, backups and databases** per server, bounded by
-  their account quota (you can raise a value up to *free quota + what this server
-  already uses*, and never below what's already in use). New
-  `PUT /servers/:id/build` endpoint (owner/admin; admins aren't quota-bound).
-- **Databases store item** — buy **database slots** in the Shop, just like RAM or
-  backups. New servers now default to **1 database** (was 5).
-- **Quota-backed feature limits** — backups **and** databases are now drawn from
-  your account quota (the sum of each server's allocations). Creating a backup is
-  bounded by that **server's** backup limit (classic Pterodactyl behaviour);
-  databases by the server's database limit.
-- **Dashboard** now shows a **Databases** quota tile alongside Backups.
-
-### 🛠️ Admin console
-
-- **Edit any server's resources** — a new ✏️ action on Admin → Servers opens a
-  resource/feature-limit editor (RAM/CPU/disk + databases/backups/allocations),
-  not bound by the owner's quota.
-- **New-user defaults** and the **Shop** editor gained a **Databases** field;
-  per-user **Databases quota** is editable on the user editor; the admin
-  create-server form takes **Databases/Backups** feature limits.
-
-### 🔧 Notes
-
-- Migrations are additive: existing users get a `databases` quota that covers
-  what their servers already allocate (no negative balances); new servers default
-  to 1 database / 1 backup, allocated from the owner's quota.
+</details>
 
 ## [1.9.1] — 2026-06-20
 

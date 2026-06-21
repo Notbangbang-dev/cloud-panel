@@ -16,7 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 
-const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings', 'backups', 'automations', 'subusers', 'schedules', 'databases'];
+const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings', 'backups', 'automations', 'subusers', 'schedules', 'databases', 'achievements', 'ledger'];
 
 /** Global, admin-editable settings (economy, registration, defaults, shop). */
 const SETTINGS_DEFAULTS = {
@@ -54,6 +54,31 @@ const SETTINGS_DEFAULTS = {
   databaseHosts: [],
   // Security — two-factor authentication policy.
   security: { force2faAdmins: false },
+  // Daily login reward — coins once per (UTC) day, with an optional streak bonus.
+  dailyReward: { enabled: false, coins: 100, streakBonus: 0, maxBonus: 0 },
+  // Maintenance mode — when on, non-admins are locked out with a custom notice.
+  maintenance: {
+    enabled: false,
+    title: "We'll be right back",
+    message: 'Cloud Panel is undergoing scheduled maintenance. Please check back soon.',
+    allowAdmins: true,
+    // Scheduled window — when scheduleEnabled and now is within [start, end],
+    // maintenance is active even if `enabled` is off (ISO datetime strings).
+    scheduleEnabled: false,
+    start: '',
+    end: '',
+  },
+  // Global broadcast banner shown across the panel (and the login screen).
+  banner: { enabled: false, text: '', style: 'info' },
+  // Seasonal auto-themes — 'off' | 'auto' | 'halloween' | 'winter' | 'christmas' | 'newyear'.
+  seasonal: { mode: 'off' },
+  // Achievements & XP, and the coin-bought Server Pets — both admin-toggleable.
+  achievements: { enabled: false },
+  pets: { enabled: false },
+  // Shareable PNG "brag cards" of a server's stats.
+  bragCards: { enabled: false },
+  // A public, panel-wide network status page at /status.
+  statusOverview: { enabled: false, title: '' },
 };
 
 function uid(prefix) {
@@ -545,6 +570,17 @@ function migrateUsers() {
     if (u.status === undefined) patch.status = 'active';
     if (u.tokenVersion === undefined) patch.tokenVersion = 0; // for token revocation
     if (u.discordId === undefined) patch.discordId = null; // Discord OAuth link
+    if (u.lastDailyAt === undefined) patch.lastDailyAt = null; // daily reward claim
+    if (u.dailyStreak === undefined) patch.dailyStreak = 0;
+    if (u.xp === undefined) patch.xp = 0; // achievements / levels
+    if (u.achievements === undefined) patch.achievements = []; // unlocked ids
+    if (u.stats === undefined) patch.stats = {}; // achievement counters
+    if (u.pets === undefined) patch.pets = []; // owned pet ids
+    if (u.activePet === undefined) patch.activePet = null; // selected pet
+    if (u.avatar === undefined) patch.avatar = null; // profile picture URL
+    if (u.themePreset === undefined) patch.themePreset = null; // per-user theme
+    if (u.friends === undefined) patch.friends = []; // friend user ids
+    if (u.friendRequests === undefined) patch.friendRequests = []; // incoming request ids
     // Two-factor (TOTP). `totp` holds the secret + recovery codes; `twoFactor`
     // mirrors the enabled flag for backward-compatible reads.
     if (u.totp === undefined) patch.totp = { enabled: !!u.twoFactor, secret: null, backupCodes: [] };

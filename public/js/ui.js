@@ -117,7 +117,7 @@
 
   /* ---- ANSI → HTML ---- */
   const ANSI = { 30: '#5c6788', 31: '#fca5a5', 32: '#86efac', 33: '#fde047', 34: '#93c5fd', 35: '#d8b4fe', 36: '#67e8f9', 37: '#e7ecf6', 90: '#8a97b4', 91: '#fca5a5', 92: '#86efac', 93: '#fde047', 94: '#93c5fd', 95: '#d8b4fe', 96: '#67e8f9', 97: '#ffffff' };
-  CP.ansiToHtml = function (text) {
+  CP.ansiToHtml = function (text, palette) {
     let out = '';
     let color = null, bold = false, open = false;
     const re = /\u001b\[([0-9;]*)m/g;
@@ -137,7 +137,7 @@
         if (code === 0) { color = null; bold = false; }
         else if (code === 1) bold = true;
         else if (code === 22) bold = false;
-        else if (ANSI[code]) color = ANSI[code];
+        else if (ANSI[code]) color = (palette && palette[code]) || ANSI[code];
       }
     }
     seg(text.slice(last));
