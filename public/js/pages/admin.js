@@ -356,21 +356,33 @@
     } catch (e) { CP.ui.toast(e.message, 'err'); }
   }
 
+  // A polished "Administrator" toggle row (switch + label + helper text),
+  // shared by the Create and Edit user dialogs.
+  function adminToggleRow(input) {
+    input.className = 'switch';
+    return h('label', { class: 'switch-row', style: { marginTop: '6px', cursor: 'pointer' } },
+      h('div', {},
+        h('b', { html: `${icon('shield', 14)} Administrator` }),
+        h('div', { class: 'muted', style: { fontSize: '12px', marginTop: '2px' } }, 'Full access to every server, user, node and setting.')),
+      h('div', { style: { marginLeft: 'auto', display: 'flex', alignItems: 'center' } }, input));
+  }
+  const userField = (label, input, hint) =>
+    h('label', { class: 'field' }, h('span', {}, label), input,
+      hint ? h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '4px' } }, hint) : null);
+
   function userForm(u) {
     const username = h('input', { value: u ? u.username : '', placeholder: 'username', disabled: !!u });
-    const email = h('input', { value: u ? u.email : '', placeholder: 'user@cloud.panel' });
-    const first = h('input', { value: u ? u.firstName : '' });
-    const last = h('input', { value: u ? u.lastName : '' });
-    const password = h('input', { type: 'password', placeholder: u ? 'Leave blank to keep' : 'password' });
+    const email = h('input', { type: 'email', value: u ? u.email : '', placeholder: 'user@cloud.panel' });
+    const first = h('input', { value: u ? u.firstName : '', placeholder: 'optional' });
+    const last = h('input', { value: u ? u.lastName : '', placeholder: 'optional' });
+    const password = h('input', { type: 'password', placeholder: u ? 'Leave blank to keep' : 'Set a password' });
     const admin = h('input', { type: 'checkbox' }); if (u && u.admin) admin.checked = true;
     const body = h('div', {},
       h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 16px' } },
-        h('label', { class: 'field' }, h('span', {}, 'Username'), username),
-        h('label', { class: 'field' }, h('span', {}, 'Email'), email),
-        h('label', { class: 'field' }, h('span', {}, 'First name'), first),
-        h('label', { class: 'field' }, h('span', {}, 'Last name'), last),
-        h('label', { class: 'field' }, h('span', {}, 'Password'), password)),
-      h('label', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', cursor: 'pointer' } }, admin, h('span', { class: 'muted' }, 'Administrator (full access)')));
+        userField('Username', username), userField('Email', email),
+        userField('First name', first), userField('Last name', last)),
+      userField('Password', password, u ? null : 'The user can change this after they sign in.'),
+      adminToggleRow(admin));
     return { body, vals: () => ({ username: username.value, email: email.value, firstName: first.value, lastName: last.value, password: password.value, admin: admin.checked }) };
   }
   function createUser(done) {
@@ -405,8 +417,8 @@
         h('label', { class: 'field' }, h('span', {}, 'Last name'), last),
         h('label', { class: 'field' }, h('span', {}, 'New password'), password),
         h('label', { class: 'field' }, h('span', {}, 'Coins'), coins)),
-      h('label', { style: { display: 'flex', alignItems: 'center', gap: '10px', margin: '2px 0 8px', cursor: 'pointer' } }, admin, h('span', { class: 'muted' }, 'Administrator (full access)')),
-      h('div', { class: 'section-title', style: { margin: '10px 0 6px' } }, 'Resource quota'),
+      adminToggleRow(admin),
+      h('div', { class: 'section-title', style: { margin: '14px 0 6px' } }, 'Resource quota'),
       h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(3, 1fr)', gap: '0 12px' } },
         h('label', { class: 'field' }, h('span', {}, 'RAM (MB)'), mem),
         h('label', { class: 'field' }, h('span', {}, 'CPU (%)'), cpu),

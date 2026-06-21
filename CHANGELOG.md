@@ -4,6 +4,20 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.2] — 2026-06-21
+
+### 💅 Improved
+- **Create / Edit User dialog** — cleaner, balanced layout: the form is a tidy
+  2×2 grid (Username/Email, First/Last) with a **full-width Password** field, and
+  the old bare "Administrator" checkbox is now a proper **toggle row** with an
+  icon, label and a "Full access to every server, user, node and setting" helper
+  — consistent with the Settings switches.
+
+### 🐛 Fixed
+- **Per-server status page** no longer renders the literal text **"null"** for
+  servers without a description or with nobody online (native `Element.append`
+  was stringifying empty sections).
+
 ## [2.1.1] — 2026-06-21
 
 > Upgrades five 2.1 features from "lite" to full builds. All additive.
