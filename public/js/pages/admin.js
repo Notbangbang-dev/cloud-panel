@@ -17,6 +17,7 @@
     { id: 'databases', label: 'Databases', icon: 'drive' },
     { id: 'settings', label: 'Settings', icon: 'sliders' },
     { id: 'achievements', label: 'Achievements', icon: 'zap' },
+    { id: 'billing', label: 'Billing', icon: 'cart' },
     { id: 'appearance', label: 'Appearance', icon: 'palette' },
     { id: 'login', label: 'Login', icon: 'key' },
   ];
@@ -50,7 +51,7 @@
     function render() {
       removeAppearancePreview(); // leaving a tab discards an unsaved theme preview
       CP.clear(content);
-      ({ overview, analytics: analyticsTab, servers, users, nodes, locations, allocations, eggs, databases: databasesTab, settings, achievements: achievementsTab, appearance: appearanceTab, login: loginTab }[active])(content);
+      ({ overview, analytics: analyticsTab, servers, users, nodes, locations, allocations, eggs, databases: databasesTab, settings, achievements: achievementsTab, billing: billingTab, appearance: appearanceTab, login: loginTab }[active])(content);
     }
     render();
   };
@@ -578,6 +579,111 @@
           field('Status page title', soTitle))),
       h('div', { style: { marginTop: '18px' } }, save)
     );
+  }
+
+  /* ---------------- Billing & plans ---------------- */
+  async function billingTab(root) {
+    loading(root);
+    let d;
+    try { d = (await CP.api.adminBilling()).data; }
+    catch (e) { CP.clear(root); return root.appendChild(CP.empty('alert', e.message)); }
+    CP.clear(root);
+    const c = d.config;
+    const reload = () => billingTab(CP.clear(root));
+
+    const sw = (v) => { const i = h('input', { type: 'checkbox', class: 'switch' }); i.checked = !!v; return i; };
+    const field = (l, i, hint) => h('label', { class: 'field' }, h('span', {}, l), i, hint ? h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '2px' } }, hint) : null);
+    const sel = (v, opts) => { const s = h('select', {}, ...opts.map((o) => h('option', { value: o[0] }, o[1]))); s.value = v; return s; };
+    const num = (v) => h('input', { type: 'number', value: v == null ? '' : v });
+    const txt = (v, ph) => h('input', { value: v || '', placeholder: ph || '' });
+    const switchRow = (l, desc, i) => h('div', { class: 'switch-row' }, h('div', {}, h('b', {}, l), h('div', { class: 'muted', style: { fontSize: '12.5px' } }, desc)), h('div', { style: { marginLeft: 'auto' } }, i));
+
+    const modeSel = sel(c.mode, [['free', 'Free (no billing)'], ['paid', 'Paid only'], ['trial', 'Paid + free trial']]);
+    const currency = txt(c.currency, 'usd');
+    const trialDays = num(c.trialDays);
+    const cancelSel = sel(c.cancelBehavior, [['revert', 'Revert quota to defaults'], ['keep', 'Keep current quota']]);
+    const stripeOn = sw(c.stripe.enabled);
+    const pubKey = txt(c.stripe.publishableKey, 'pk_live_…');
+    const secKey = txt('', c.stripe.secretKeySet ? '•••••••• set — leave blank to keep' : 'sk_live_…');
+    const whSec = txt('', c.stripe.webhookSecretSet ? '•••••••• set — leave blank to keep' : 'whsec_…');
+    const saveCfg = h('button', { class: 'btn primary', html: `${icon('save', 15)} Save billing settings` });
+    saveCfg.onclick = async () => {
+      try {
+        await CP.api.adminUpdateBilling({ mode: modeSel.value, currency: currency.value, trialDays: +trialDays.value, cancelBehavior: cancelSel.value,
+          stripe: { enabled: stripeOn.checked, publishableKey: pubKey.value, secretKey: secKey.value, webhookSecret: whSec.value } });
+        if (CP.app.billing) CP.app.billing.mode = modeSel.value;
+        CP.ui.toast('Billing settings saved', 'ok'); reload();
+      } catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
+
+    root.appendChild(h('div', { class: 'card' },
+      h('h3', { html: `${icon('cart', 16)} Monetization` }),
+      h('div', { style: { marginTop: '8px' } }, field('Mode', modeSel, 'Free = no billing · Paid = must buy a plan · Trial = paid with a free trial first')),
+      h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px' } }, field('Currency', currency), field('Free trial (days)', trialDays), field('On cancel', cancelSel)),
+      h('div', { style: { height: '1px', background: 'var(--border)', margin: '14px 0' } }),
+      h('h3', { html: `${icon('shield', 16)} Stripe — real payments` }),
+      h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 10px' } }, 'Keys live at dashboard.stripe.com → Developers → API keys. For renewals/cancellations, add a webhook pointing at /api/billing/webhook and paste its signing secret. Free plans work without Stripe.'),
+      switchRow('Enable Stripe payments', 'Required to charge real money for paid plans.', stripeOn),
+      field('Publishable key', pubKey),
+      field('Secret key', secKey),
+      field('Webhook signing secret', whSec),
+      h('div', { style: { marginTop: '14px' } }, saveCfg)));
+
+    root.appendChild(h('div', { class: 'fm-bar', style: { marginTop: '20px' } },
+      h('div', { class: 'section-title', style: { margin: 0 } }, 'Plans'),
+      h('div', { style: { flex: 1 } }),
+      h('button', { class: 'btn primary', html: `${icon('plus', 14)} New plan`, onclick: () => planModal(null, c, reload) })));
+    if (!d.plans.length) { root.appendChild(CP.empty('cart', 'No plans yet — create one above.')); return; }
+    const grid = h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' } });
+    d.plans.forEach((p) => grid.appendChild(h('div', { class: 'card' },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+        h('b', { style: { flex: 1 } }, p.name + (p.active === false ? ' (hidden)' : '')),
+        h('button', { class: 'btn sm ghost icon', title: 'Edit', html: icon('edit', 14), onclick: () => planModal(p, c, reload) }),
+        h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delPlan(p, reload) })),
+      h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '4px' } }, (p.price ? ((p.price / 100).toFixed(2) + ' ' + (c.currency || 'usd').toUpperCase()) : 'Free') + ' · ' + p.interval + (p.featured ? ' · ★' : '')),
+      h('div', { class: 'faint', style: { fontSize: '11.5px', marginTop: '4px' } }, `RAM ${p.resources.memory} · CPU ${p.resources.cpu}% · ${p.resources.servers} servers`))));
+    root.appendChild(grid);
+  }
+  async function delPlan(p, done) {
+    if (!(await CP.ui.confirm({ title: 'Delete plan', message: `Delete '${p.name}'? Members already on it keep their resources.`, confirmText: 'Delete' }))) return;
+    try { await CP.api.adminDeletePlan(p.id); CP.ui.toast('Deleted', 'ok'); done(); } catch (e) { CP.ui.toast(e.message, 'err'); }
+  }
+  function planModal(plan, c, done) {
+    const name = h('input', { value: plan ? plan.name : '', placeholder: 'Pro' });
+    const desc = h('input', { value: plan ? (plan.description || '') : '', placeholder: 'Great for growing communities' });
+    const price = h('input', { type: 'number', step: '0.01', min: '0', value: plan ? (plan.price / 100) : 0 });
+    const interval = (() => { const s = h('select', {}, ...[['month', 'Monthly'], ['year', 'Yearly'], ['one_time', 'One-time']].map((o) => h('option', { value: o[0] }, o[1]))); s.value = plan ? plan.interval : 'month'; return s; })();
+    const coins = h('input', { type: 'number', min: '0', value: plan ? (plan.coins || 0) : 0 });
+    const R = (k) => h('input', { type: 'number', min: '0', value: plan ? (plan.resources[k] || 0) : 0 });
+    const mem = R('memory'), cpu = R('cpu'), disk = R('disk'), servers = R('servers'), backups = R('backups'), databases = R('databases');
+    const feats = h('textarea', { rows: '3', style: { width: '100%', resize: 'vertical' } }); feats.value = plan ? (plan.features || []).join('\n') : '';
+    const featured = (() => { const i = h('input', { type: 'checkbox', class: 'switch' }); if (plan && plan.featured) i.checked = true; return i; })();
+    const active = (() => { const i = h('input', { type: 'checkbox', class: 'switch' }); if (!plan || plan.active !== false) i.checked = true; return i; })();
+    const field = (l, i) => h('label', { class: 'field' }, h('span', {}, l), i);
+    const save = h('button', { class: 'btn primary', html: `${icon('save', 15)} ${plan ? 'Save plan' : 'Create plan'}` });
+    const ref = CP.ui.modal({
+      title: plan ? `Edit · ${plan.name}` : 'New plan', size: 'lg',
+      body: h('div', {},
+        h('div', { class: 'grid', style: { gridTemplateColumns: '2fr 1fr', gap: '0 12px' } }, field('Name', name), field(`Price (${(c.currency || 'usd').toUpperCase()})`, price)),
+        field('Description', desc),
+        h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px' } }, field('Billing interval', interval), field('Bonus coins', coins)),
+        h('div', { class: 'section-title', style: { margin: '14px 0 6px' } }, 'Resource grant'),
+        h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(3,1fr)', gap: '0 12px' } }, field('RAM (MB)', mem), field('CPU (%)', cpu), field('Disk (MB)', disk), field('Servers', servers), field('Backups', backups), field('Databases', databases)),
+        field('Features (one per line)', feats),
+        h('div', { style: { display: 'flex', gap: '22px', marginTop: '12px' } },
+          h('label', { style: { display: 'flex', gap: '8px', alignItems: 'center', cursor: 'pointer' } }, featured, h('span', {}, 'Featured / popular')),
+          h('label', { style: { display: 'flex', gap: '8px', alignItems: 'center', cursor: 'pointer' } }, active, h('span', {}, 'Active (visible to users)')))),
+      footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'), save],
+    });
+    save.onclick = async () => {
+      const body = {
+        name: name.value, description: desc.value, price: Math.round(parseFloat(price.value || '0') * 100), interval: interval.value, coins: +coins.value,
+        resources: { memory: +mem.value, cpu: +cpu.value, disk: +disk.value, servers: +servers.value, backups: +backups.value, databases: +databases.value },
+        features: feats.value.split('\n').map((s) => s.trim()).filter(Boolean), featured: featured.checked, active: active.checked,
+      };
+      try { if (plan) await CP.api.adminUpdatePlan(plan.id, body); else await CP.api.adminCreatePlan(body); CP.ui.toast(plan ? 'Plan saved' : 'Plan created', 'ok'); ref.close(); done(); }
+      catch (e) { CP.ui.toast(e.message, 'err'); }
+    };
   }
 
   /* ---------------- Analytics ---------------- */

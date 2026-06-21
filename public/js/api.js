@@ -175,6 +175,12 @@
     petBuy(petId) { return this.post('/pets/buy', { petId }); },
     petActive(petId) { return this.put('/pets/active', { petId }); },
 
+    /* billing / paid plans */
+    billing() { return this.get('/billing'); },
+    billingCheckout(planId) { return this.post('/billing/checkout', { planId, origin: location.origin }); },
+    billingConfirm(sessionId) { return this.post('/billing/confirm', { sessionId }); },
+    billingTrial(planId) { return this.post('/billing/trial', { planId }); },
+
     /* friends & presence */
     friends() { return this.get('/friends'); },
     friendRequest(username) { return this.post('/friends/request', { username }); },
@@ -193,6 +199,11 @@
     adminCreateEgg(body) { return this.post('/admin/eggs', body); },
     adminUpdateEgg(id, body) { return this.put(`/admin/eggs/${id}`, body); },
     adminDeleteEgg(id) { return this.del(`/admin/eggs/${id}`); },
+    adminBilling() { return this.get('/admin/billing'); },
+    adminUpdateBilling(cfg) { return this.put('/admin/billing', cfg); },
+    adminCreatePlan(body) { return this.post('/admin/plans', body); },
+    adminUpdatePlan(id, body) { return this.put(`/admin/plans/${id}`, body); },
+    adminDeletePlan(id) { return this.del(`/admin/plans/${id}`); },
     adminUpdateSettings(patch) { return this.put('/admin/settings', patch); },
     adminApprove(id) { return this.post(`/admin/users/${id}/approve`); },
     adminDecline(id) { return this.post(`/admin/users/${id}/decline`); },

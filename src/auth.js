@@ -65,8 +65,9 @@ function verifyState(token) {
 
 function publicUser(user) {
   if (!user) return null;
-  // Never expose the password hash or the raw TOTP secret / recovery codes.
-  const { password, totp, ...rest } = user;
+  // Never expose the password hash, raw TOTP secret/recovery codes, or the
+  // internal Stripe customer/subscription ids.
+  const { password, totp, stripeCustomerId, stripeSubId, ...rest } = user;
   rest.twoFactorEnabled = !!((totp && totp.enabled) || user.twoFactor);
   return rest;
 }

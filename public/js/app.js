@@ -18,6 +18,7 @@
     achievementsEnabled: false,
     petsEnabled: false,
     bragCardsEnabled: false,
+    billing: null,
     banner: null,
     maintenance: null,
     dailyReward: null,
@@ -91,6 +92,7 @@
           this.achievementsEnabled = !!me.achievementsEnabled;
           this.petsEnabled = !!me.petsEnabled;
           this.bragCardsEnabled = !!me.bragCardsEnabled;
+          this.billing = me.billing || null;
           this.dailyReward = me.dailyReward || null;
           if (me.banner) this.banner = me.banner;
           if (me.maintenance) this.maintenance = me.maintenance;
@@ -123,6 +125,7 @@
       if (head === 'achievements') return { route: 'achievements', params: {} };
       if (head === 'pets') return { route: 'pets', params: {} };
       if (head === 'friends') return { route: 'friends', params: {} };
+      if (head === 'billing') return { route: 'billing', params: {} };
       if (head === 'terms') return { route: 'terms', params: {} };
       if (head === 'privacy') return { route: 'privacy', params: {} };
       if (head === 'status') return { route: 'status', params: { slug: rest[0] } };
@@ -197,6 +200,7 @@
       if (this.afkEnabled) navDefs.push({ route: 'afk', label: 'AFK', icon: 'coin', path: '/afk' });
       if (this.achievementsEnabled) navDefs.push({ route: 'achievements', label: 'Achievements', icon: 'zap', path: '/achievements' });
       if (this.petsEnabled) navDefs.push({ route: 'pets', label: 'Pets', icon: 'rocket', path: '/pets' });
+      if (this.billing && this.billing.mode !== 'free') navDefs.push({ route: 'billing', label: 'Plans', icon: 'cart', path: '/billing' });
       navDefs.push({ route: 'friends', label: 'Friends', icon: 'users', path: '/friends' });
       navDefs.push({ route: 'account', label: 'Account', icon: 'settings', path: '/account' });
       const navItems = navDefs.map((n) =>

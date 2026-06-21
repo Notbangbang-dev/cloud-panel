@@ -16,7 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 
-const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings', 'backups', 'automations', 'subusers', 'schedules', 'databases', 'achievements', 'ledger'];
+const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings', 'backups', 'automations', 'subusers', 'schedules', 'databases', 'achievements', 'ledger', 'plans'];
 
 /** Global, admin-editable settings (economy, registration, defaults, shop). */
 const SETTINGS_DEFAULTS = {
@@ -79,6 +79,16 @@ const SETTINGS_DEFAULTS = {
   bragCards: { enabled: false },
   // A public, panel-wide network status page at /status.
   statusOverview: { enabled: false, title: '' },
+  // Monetization / paid plans. mode: 'free' | 'paid' | 'trial' (paid + free trial).
+  // Real payments via Stripe — keys are configured in the admin console.
+  billing: {
+    mode: 'free',
+    currency: 'usd',
+    trialDays: 7,
+    cancelBehavior: 'revert', // 'revert' quota to defaults on cancel, or 'keep'
+    trialPlanId: null,
+    stripe: { enabled: false, publishableKey: '', secretKey: '', webhookSecret: '' },
+  },
 };
 
 function uid(prefix) {
@@ -581,6 +591,14 @@ function migrateUsers() {
     if (u.themePreset === undefined) patch.themePreset = null; // per-user theme
     if (u.friends === undefined) patch.friends = []; // friend user ids
     if (u.friendRequests === undefined) patch.friendRequests = []; // incoming request ids
+    // Billing / paid plans.
+    if (u.plan === undefined) patch.plan = null;
+    if (u.planStatus === undefined) patch.planStatus = 'none'; // none|active|trialing|past_due|canceled
+    if (u.planSince === undefined) patch.planSince = null;
+    if (u.trialEndsAt === undefined) patch.trialEndsAt = null;
+    if (u.trialUsed === undefined) patch.trialUsed = false;
+    if (u.stripeCustomerId === undefined) patch.stripeCustomerId = null;
+    if (u.stripeSubId === undefined) patch.stripeSubId = null;
     // Two-factor (TOTP). `totp` holds the secret + recovery codes; `twoFactor`
     // mirrors the enabled flag for backward-compatible reads.
     if (u.totp === undefined) patch.totp = { enabled: !!u.twoFactor, secret: null, backupCodes: [] };

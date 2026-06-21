@@ -24,6 +24,7 @@ const pets = require('../services/pets');
 const friends = require('../services/friends');
 const presence = require('../services/presence');
 const ledger = require('../services/ledger');
+const billing = require('../services/billing');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -345,6 +346,34 @@ router.post('/friends/decline', (req, res) => {
 });
 router.delete('/friends/:id', (req, res) => {
   try { res.json({ data: friends.remove(req.user, req.params.id) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ---- Billing / paid plans -------------------------------------------------
+
+router.get('/billing', (req, res) => {
+  res.json({ data: { config: billing.publicConfig(), plans: billing.plans({ activeOnly: true }), current: billing.userPlan(req.user) } });
+});
+
+router.post('/billing/checkout', activeRequired, async (req, res) => {
+  try {
+    const planId = String((req.body || {}).planId || '');
+    const plan = billing.getPlan(planId);
+    if (plan && plan.price <= 0) return res.json({ data: { free: true, ...billing.selectFreePlan(req.user, planId) } });
+    let origin = String((req.body || {}).origin || '');
+    if (!/^https?:\/\/[^/]+$/.test(origin)) origin = `${req.protocol}://${req.get('host')}`;
+    const r = await billing.createCheckout(req.user, planId, origin);
+    res.json({ data: { url: r.url } });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.post('/billing/confirm', async (req, res) => {
+  try { res.json({ data: await billing.confirmCheckout(req.user, String((req.body || {}).sessionId || '')) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.post('/billing/trial', activeRequired, (req, res) => {
+  try { res.json({ data: billing.startTrial(req.user, String((req.body || {}).planId || '')) }); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 

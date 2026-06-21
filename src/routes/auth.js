@@ -7,6 +7,7 @@ const auth = require('../auth');
 const config = require('../config');
 const settings = require('../services/settings');
 const users = require('../services/users');
+const billing = require('../services/billing');
 const { rateLimit } = require('../middleware');
 
 const router = express.Router();
@@ -216,6 +217,7 @@ router.get('/me', auth.authRequired, (req, res) => {
     achievementsEnabled: !!(s.achievements && s.achievements.enabled),
     petsEnabled: settings.economyEnabled() && !!(s.pets && s.pets.enabled),
     bragCardsEnabled: !!(s.bragCards && s.bragCards.enabled),
+    billing: billing.publicConfig(),
     banner: publicBanner(),
     maintenance: publicMaintenance(),
   });

@@ -12,6 +12,7 @@ const users = require('../services/users');
 const settings = require('../services/settings');
 const appearance = require('../services/appearance');
 const achievements = require('../services/achievements');
+const billing = require('../services/billing');
 const ledger = require('../services/ledger');
 const backups = require('../services/backups');
 const subusers = require('../services/subusers');
@@ -208,7 +209,52 @@ router.delete('/users/:id', (req, res) => {
 // ---- Settings (economy / registration / shop) ----------------------------
 
 router.get('/settings', (req, res) => {
-  res.json({ data: settings.get() });
+  // Redact Stripe secrets — never echo them back, even to admins.
+  const s = JSON.parse(JSON.stringify(settings.get()));
+  if (s.billing && s.billing.stripe) {
+    s.billing.stripe.secretKey = s.billing.stripe.secretKey ? '__set__' : '';
+    s.billing.stripe.webhookSecret = s.billing.stripe.webhookSecret ? '__set__' : '';
+  }
+  res.json({ data: s });
+});
+
+/* ---- Billing config + plans --------------------------------------------- */
+router.get('/billing', (req, res) => {
+  res.json({ data: { config: billing.adminConfig(), plans: billing.plans() } });
+});
+
+router.put('/billing', (req, res) => {
+  const b = req.body || {};
+  const curS = (db.settings().billing || {}).stripe || {};
+  const inS = b.stripe || {};
+  // Keep existing Stripe secrets unless a fresh, non-placeholder value is given.
+  const keep = (val, cur) => (val && val !== '__set__') ? val : cur;
+  settings.update({
+    billing: {
+      mode: b.mode, currency: b.currency, trialDays: b.trialDays, cancelBehavior: b.cancelBehavior, trialPlanId: b.trialPlanId,
+      stripe: {
+        enabled: !!inS.enabled,
+        publishableKey: inS.publishableKey != null ? inS.publishableKey : curS.publishableKey,
+        secretKey: keep(inS.secretKey, curS.secretKey),
+        webhookSecret: keep(inS.webhookSecret, curS.webhookSecret),
+      },
+    },
+  });
+  db.log({ type: 'admin', userId: req.user.id, message: 'Updated billing settings' });
+  res.json({ data: billing.adminConfig() });
+});
+
+router.post('/plans', (req, res) => {
+  try { res.status(201).json({ data: billing.createPlan(req.body || {}) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/plans/:id', (req, res) => {
+  try { res.json({ data: billing.updatePlan(req.params.id, req.body || {}) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/plans/:id', (req, res) => {
+  if (!billing.removePlan(req.params.id)) return res.status(404).json({ error: 'Plan not found' });
+  res.json({ ok: true });
 });
 
 router.put('/settings', (req, res) => {

@@ -42,7 +42,7 @@ const num = (v, min = 0) => Math.max(min, Math.floor(Number(v) || 0));
 /** Apply a (partial) settings patch with whitelisting + coercion. */
 function update(patch = {}) {
   const cur = JSON.parse(JSON.stringify(get()));
-  const allowed = ['economy', 'registration', 'defaults', 'limits', 'shop', 'afk', 'security', 'dailyReward', 'maintenance', 'banner', 'seasonal', 'achievements', 'pets', 'bragCards', 'statusOverview'];
+  const allowed = ['economy', 'registration', 'defaults', 'limits', 'shop', 'afk', 'security', 'dailyReward', 'maintenance', 'banner', 'seasonal', 'achievements', 'pets', 'bragCards', 'statusOverview', 'billing'];
   const clean = {};
   for (const k of allowed) if (patch[k] !== undefined) clean[k] = patch[k];
   deepMerge(cur, clean);
@@ -140,6 +140,19 @@ function update(patch = {}) {
   if (!cur.statusOverview) cur.statusOverview = {};
   cur.statusOverview.enabled = !!cur.statusOverview.enabled;
   cur.statusOverview.title = String(cur.statusOverview.title || '').slice(0, 80);
+
+  // Billing / paid plans.
+  if (!cur.billing) cur.billing = {};
+  cur.billing.mode = ['free', 'paid', 'trial'].includes(cur.billing.mode) ? cur.billing.mode : 'free';
+  cur.billing.currency = String(cur.billing.currency || 'usd').toLowerCase().replace(/[^a-z]/g, '').slice(0, 3) || 'usd';
+  cur.billing.trialDays = Math.min(365, Math.max(0, Math.floor(Number(cur.billing.trialDays) || 0)));
+  cur.billing.cancelBehavior = cur.billing.cancelBehavior === 'keep' ? 'keep' : 'revert';
+  cur.billing.trialPlanId = cur.billing.trialPlanId ? String(cur.billing.trialPlanId).slice(0, 40) : null;
+  if (!cur.billing.stripe) cur.billing.stripe = {};
+  cur.billing.stripe.enabled = !!cur.billing.stripe.enabled;
+  cur.billing.stripe.publishableKey = String(cur.billing.stripe.publishableKey || '').slice(0, 200);
+  cur.billing.stripe.secretKey = String(cur.billing.stripe.secretKey || '').slice(0, 200);
+  cur.billing.stripe.webhookSecret = String(cur.billing.stripe.webhookSecret || '').slice(0, 200);
 
   db.update('settings', 'global', cur);
   return get();

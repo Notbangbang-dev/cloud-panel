@@ -4,6 +4,34 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] — 2026-06-21
+
+### 🚀 Added — Paid plans & real-money billing
+A complete, highly-customizable monetization system, all configured in the admin
+console (**Admin → Billing**):
+- **Three modes:** **Free** (no billing), **Paid** (members must buy a plan), or
+  **Paid + free trial** (each member gets one trial, configurable length).
+- **Fully custom plans** — name, description, **price** (any currency), interval
+  (monthly / yearly / one-time), **resource grant** (RAM/CPU/disk/servers/backups/
+  databases), bonus coins, a features list, "featured/popular" flag and
+  active/hidden toggle. Full CRUD with a plan editor.
+- **Real payments via Stripe** — paste your Stripe keys in the admin console;
+  members check out on Stripe-hosted Checkout. Subscriptions **and** one-time
+  payments. Activation happens on return (verified server-side) and via a
+  **signed webhook** (`/api/billing/webhook`) for renewals/cancellations.
+- **Free plans** work with no Stripe setup at all (instant select).
+- New member **Plans** page (pricing cards, current-plan banner, trial button)
+  appears automatically when billing is enabled.
+- On cancellation, quota can **revert to defaults** or **stay** (admin choice).
+
+### 🔒 Notes
+- Stripe is called over plain HTTPS — **no new dependency**. Secret keys are
+  stored server-side and never echoed back to the browser (admin sees only
+  "set"/"not set").
+- New `plans` collection + `billing` settings + per-user plan fields migrate
+  automatically. Buying/selling real money? Configure Stripe tax/receipts in your
+  Stripe dashboard.
+
 ## [2.2.0] — 2026-06-21
 
 ### 🚀 Improved — Network status page

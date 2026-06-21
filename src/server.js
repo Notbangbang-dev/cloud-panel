@@ -20,6 +20,7 @@ const schedules = require('./services/schedules');
 const players = require('./services/players');
 const metrics = require('./services/metrics');
 const isolation = require('./services/isolation');
+const billing = require('./services/billing');
 const consoleWs = require('./ws/console');
 const sftp = require('./sftp/sftpServer');
 const { securityHeaders } = require('./middleware');
@@ -37,6 +38,14 @@ app.disable('x-powered-by');
 // IP-based rate limiter can't be bypassed via spoofed X-Forwarded-For headers.
 if (config.trustProxy !== false) app.set('trust proxy', config.trustProxy);
 app.use(securityHeaders);
+
+// Stripe webhook — needs the RAW body for signature verification, so it must be
+// mounted before the JSON body parser.
+app.post('/api/billing/webhook', express.raw({ type: '*/*', limit: '1mb' }), (req, res) => {
+  try { const type = billing.handleWebhook(req.body, req.headers['stripe-signature']); res.json({ received: true, type }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 app.use(express.json({ limit: '8mb' }));
 app.use(express.urlencoded({ extended: true }));
 
