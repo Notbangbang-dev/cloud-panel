@@ -108,7 +108,16 @@ Caveats:
   live user record (a token's stale `admin` claim is ignored).
 - Login, registration, setup **and SFTP** authentication are rate-limited /
   throttled against brute force.
-- Automation webhooks are restricted to `https` public hosts (SSRF mitigation).
+- **All server-side fetches** (egg/modpack/plugin installers and automation
+  webhooks) are restricted to `https` **public** hosts — loopback, link-local
+  (incl. the cloud metadata IP), private/CGNAT/ULA ranges are blocked, with DNS
+  resolution checked against private addresses (SSRF mitigation,
+  `src/services/nettrust.js`).
+- Admin settings/merge input is guarded against prototype pollution
+  (`__proto__` / `prototype` / `constructor` are rejected).
+- On boot the panel best-effort restricts its secrets (`data/.jwt-secret`, the
+  database, SFTP host key, `.env`) to `0600` even when full isolation is off, and
+  logs a clear warning when servers run unisolated while registration is open.
 
 ## Supported versions
 

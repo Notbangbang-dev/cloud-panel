@@ -12,6 +12,7 @@ const path = require('path');
 const { Readable } = require('stream');
 const db = require('../db');
 const files = require('./files');
+const nettrust = require('./nettrust');
 
 const API = 'https://api.modrinth.com/v2';
 const UA = 'CloudPanel/1.9 (+https://github.com/Notbangbang-dev/cloud-panel)';
@@ -111,6 +112,7 @@ function pickFile(version) {
 
 /** Download a URL straight into a server-relative path (quota-enforced). */
 async function downloadInto(server, relPath, fileUrl) {
+  await nettrust.assertPublicUrl(fileUrl); // SSRF guard (https + public host)
   const res = await fetch(fileUrl, { headers: { 'User-Agent': UA } });
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status})`);
   return files.saveStream(server, relPath, Readable.fromWeb(res.body));

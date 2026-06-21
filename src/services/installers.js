@@ -15,6 +15,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { pipeline } = require('stream/promises');
 const { Readable } = require('stream');
+const nettrust = require('./nettrust');
 
 /** Run a `java` command inside the server volume, streaming output to the console. */
 function runJava(args, cwd, log) {
@@ -56,12 +57,16 @@ function runSteam(args, cwd, log) {
 }
 
 async function fetchJson(url) {
+  await nettrust.assertPublicUrl(url); // SSRF guard (https + public host)
   const res = await fetch(url, { headers: { 'User-Agent': 'CloudPanel/1.0' } });
   if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
   return res.json();
 }
 
 async function download(url, dest, log) {
+  // SSRF guard: only https to public hosts. Closes the modpack-index download
+  // vector where `.mrpack` files[] could point at internal services.
+  await nettrust.assertPublicUrl(url);
   const res = await fetch(url, { headers: { 'User-Agent': 'CloudPanel/1.0' } });
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${url}`);
   const total = Number(res.headers.get('content-length') || 0);

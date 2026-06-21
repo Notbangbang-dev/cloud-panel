@@ -79,12 +79,10 @@ function loadHostKey() {
   return Buffer.from(privateKey);
 }
 
-function safeJoin(root, rel) {
-  const clean = path.normalize(rel || '/').replace(/^(\.\.(\/|\\|$))+/, '');
-  const abs = path.resolve(root, '.' + path.sep + clean);
-  if (abs !== root && !abs.startsWith(root + path.sep)) return null;
-  return abs;
-}
+// NOTE: path containment for SFTP is handled by the shared `files.resolve`
+// (used via the per-connection `resolve` closure below), which adds symlink-
+// escape protection on top of string containment. We deliberately do not keep
+// a second, weaker join helper here.
 
 function toAttrs(stat) {
   return {

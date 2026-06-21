@@ -146,7 +146,12 @@ CP_WEB_PORT=${WEB_PORT}
 CP_SFTP_PORT=${SFTP_PORT}
 CP_HOST=0.0.0.0
 CP_PUBLIC_HOST=${PUBLIC_HOST}
-CP_TRUST_PROXY=1
+# Trust X-Forwarded-* ONLY when a reverse proxy sits in front of the panel.
+# This installer exposes the port directly (no proxy), so it defaults to OFF —
+# trusting forwarded headers on a directly-reachable panel lets clients spoof
+# their IP and bypass login/SFTP rate limiting. Behind Nginx/Caddy/Cloudflare,
+# set this to the number of proxy hops (e.g. CP_TRUST_PROXY=1).
+CP_TRUST_PROXY=0
 CP_JWT_SECRET=${SECRET}
 CP_JWT_TTL=7d
 CP_ALLOC_START=${ALLOC_START}

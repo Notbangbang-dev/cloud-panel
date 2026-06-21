@@ -59,15 +59,61 @@ function chownTree(dir) {
   }
 }
 
+/** The panel's most sensitive files (admin-token secret, DB, host key, .env). */
+function secretFiles() {
+  return [
+    config.sqliteFile,
+    config.dbFile,
+    config.hostKeyFile,
+    path.join(config.dataDir, '.jwt-secret'),
+    path.join(config.root, '.env'),
+  ];
+}
+
+/** Best-effort: restrict panel secrets to the owner (0600). Runs even when full
+ *  per-user isolation is inactive, so at least OTHER OS users can't read them. */
+function lockSecrets() {
+  if (!POSIX) return;
+  for (const f of secretFiles()) {
+    try { fs.chmodSync(f, 0o600); } catch { /* best-effort */ }
+  }
+}
+
+/** Loud warning when the panel can run untrusted code without isolation (C1). */
+function warnUnisolated() {
+  let registrationOpen = false;
+  try {
+    const db = require('../db');
+    const s = db.settings();
+    registrationOpen = !!(s && s.registration && s.registration.enabled);
+  } catch { /* settings unavailable — warn generically */ }
+  console.warn(
+    '[isolation] server-process isolation is INACTIVE — game/app servers run as ' +
+    'the panel user and (with code-running eggs) can read panel secrets/data. ' +
+    (registrationOpen
+      ? 'Public registration is ENABLED: only approve users you trust, or enable '
+      : 'Before allowing untrusted users, enable ') +
+    'isolation (CP_SERVER_UID/GID as root) or use containers. See SECURITY.md (C1).'
+  );
+}
+
 /** Boot-time: warn if requested-but-inactive, and lock panel internals to root. */
 function init() {
-  if (!CONFIGURED) return;
+  // Always best-effort lock the panel's secrets so other OS users can't read
+  // them, regardless of whether per-user isolation is configured.
+  lockSecrets();
+
+  if (!CONFIGURED) {
+    warnUnisolated();
+    return;
+  }
   if (!IS_ROOT) {
     console.warn(
       '[isolation] CP_SERVER_UID/GID are set but the panel is NOT running as root — ' +
       'server isolation is INACTIVE (servers still run as the panel user). ' +
       'Run the panel as root to enable it. See SECURITY.md.'
     );
+    warnUnisolated();
     return;
   }
   // Server user may TRAVERSE data/ + volumes/ (to reach its own volume) but the
