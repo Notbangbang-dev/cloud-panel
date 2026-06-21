@@ -4,6 +4,23 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] — 2026-06-21
+
+### 🚀 Improved — Network status page
+The public **/status** overview went from 3 numbers to a real status dashboard:
+- **Overall health banner** — "All systems operational" or "Degraded" (flips
+  automatically if any server is crashed).
+- **Live headline tiles** — servers online (x/total), players online, **24h
+  uptime** (averaged across servers), and live **CPU** load.
+- **Network usage bars** — aggregate **memory** and **disk** used vs total
+  capacity across all nodes.
+- **Per-node cards** — each node shows an online dot, location, servers
+  online/total, and live **RAM / disk** usage bars + CPU load.
+- Wider, auto-refreshing layout (every 12s).
+
+Backend: a new testable `statuspage.overview()` aggregates live `pm` stats,
+`players`, `metrics` (uptime) and disk usage per node. Still admin-toggleable.
+
 ## [2.1.3] — 2026-06-21
 
 ### 🐛 Fixed
