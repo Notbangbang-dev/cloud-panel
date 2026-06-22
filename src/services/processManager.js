@@ -248,7 +248,9 @@ const manager = {
     const dir = volumeDir(server);
     const cmd = resolveStartup(server, egg);
     const [program, ...args] = tokenize(cmd);
-    if (!cmd || (!useOci && !program)) return { ok: false, error: 'Invalid startup command' };
+    // Both modes run the tokenized argv directly (no shell), so a program is
+    // always required — host via spawn(program, args), OCI via the container.
+    if (!program) return { ok: false, error: 'Invalid startup command' };
 
     r.setStatus('starting');
     r.startedAt = Date.now();
@@ -260,7 +262,7 @@ const manager = {
       if (useOci) {
         const env = buildEnv(server, egg, { host: false });
         const { name, image, args: runArgs } = oci.buildRunArgs({
-          server, egg, cmd, dir, ports: serverPorts(server), env,
+          server, egg, argv: [program, ...args], dir, ports: serverPorts(server), env,
         });
         r.oci = true;
         r.containerName = name;

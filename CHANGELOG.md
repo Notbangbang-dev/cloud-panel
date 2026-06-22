@@ -4,6 +4,17 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.2] — 2026-06-22
+
+### 🔒 Security — OCI startup hardening (LOW-1)
+- The OCI container backend no longer launches servers through `sh -c`. The
+  startup command is tokenized and passed to the container as a **verbatim argv**
+  (just like host mode), so shell metacharacters (`;`, `&&`, `$(…)`, backticks)
+  in the (owner-editable) startup line are inert — there's no shell to interpret
+  them. `--init` still forwards signals to the server process; all built-in eggs
+  run unchanged. Blank startup commands are now rejected in both modes.
+  Defense-in-depth — the container is still the sandbox. See `AUDIT_LOG.md`.
+
 ## [2.4.1] — 2026-06-22
 
 ### 🔒 Security — external audit remediation

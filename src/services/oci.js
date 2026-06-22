@@ -135,10 +135,14 @@ function portArgs(ports) {
 /**
  * Build the full argv for `run` (excluding the engine binary itself).
  *
+ * @param {object} p
+ * @param {string[]} p.argv tokenized startup command (program + args), NOT a
+ *   shell string — passed to the container verbatim so shell metacharacters in
+ *   the (owner-editable) startup line can't be interpreted (LOW-1).
  * @returns {{ name:string, image:string, args:string[] }}
- * @throws when no image can be resolved for the egg.
+ * @throws when no image can be resolved for the egg, or argv is empty.
  */
-function buildRunArgs({ server, egg, cmd, dir, ports, env }) {
+function buildRunArgs({ server, egg, argv, dir, ports, env }) {
   const name = containerName(server.id);
   const image = imageFor(egg);
   if (!image) {
@@ -146,6 +150,9 @@ function buildRunArgs({ server, egg, cmd, dir, ports, env }) {
       `No container image is set for this egg and CP_OCI_IMAGE is empty — ` +
       `cannot run '${server.name}' under the OCI sandbox.`
     );
+  }
+  if (!Array.isArray(argv) || !argv.length || !argv[0]) {
+    throw new Error('Invalid startup command');
   }
   const workdir = OCI.workdir || '/home/container';
   const limits = server.limits || {};
@@ -196,9 +203,13 @@ function buildRunArgs({ server, egg, cmd, dir, ports, env }) {
   if (OCI.extraArgs) args.push(...splitArgs(OCI.extraArgs));
 
   // ---- Image + command ----------------------------------------------------
-  // Run the egg's startup line through a shell so quoting / @argfiles work, and
-  // `exec` so the server becomes the container's main process (clean signals).
-  args.push(image, 'sh', '-c', `exec ${cmd}`);
+  // Pass the startup command as a TOKENIZED argv (exactly like host mode) — NOT
+  // through `sh -c`. The image positional marks the end of `run` options, so
+  // everything after it is the container's command/args, handed to execve()
+  // verbatim. This makes shell metacharacters (;, &&, $(), backticks, …) in the
+  // startup line inert: there is no shell to interpret them (LOW-1). `--init`
+  // (tini) is PID 1 and forwards signals to the server process.
+  args.push(image, ...argv);
 
   return { name, image, args };
 }

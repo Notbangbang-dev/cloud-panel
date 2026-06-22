@@ -1,9 +1,10 @@
 # Cloud Panel — Security Remediation Audit Log
 
 - **Date:** 2026-06-22
-- **Base version:** 2.4.0 → **2.4.1** (security patch)
+- **Base version:** 2.4.0 → **2.4.1** (security patch); **2.4.2** adds LOW-1.
 - **Scope:** Remediation of the external "Security & Bug Audit Report" findings
-  (C1, M1–M4, L1–L5) **plus** additional issues discovered during remediation.
+  (C1, M1–M4, L1–L5) **plus** additional issues discovered during remediation,
+  and a follow-up hardening of the OCI startup path (LOW-1, v2.4.2).
 - **Method:** Source fixes + targeted functional tests (28 assertions) + a live
   boot/health check. No new runtime dependencies were added.
 
@@ -30,8 +31,9 @@
 | L5 | Custom CSS permitted remote `url()` / `@import` data-exfil | Low | ✅ Fixed |
 | **A3** | **Admin password reset didn't revoke the target's sessions** | **Low (NEW)** | ✅ Fixed |
 | C1 | Host RCE by design (unsandboxed eggs) | Critical (accepted) | ✅ Hardened |
+| **LOW-1** | **OCI startup ran through `sh -c` with pre-substituted vars** | **Low (v2.4.2)** | ✅ Fixed |
 
-**New issues found & fixed during remediation: A1, A2, A3.**
+**New issues found & fixed during remediation: A1, A2, A3. Follow-up: LOW-1.**
 
 ---
 
@@ -192,6 +194,27 @@ is now louder and integrated with the **OCI container sandbox** (added in v2.4.0
 
 > To fully eliminate C1, run with `CP_OCI=1` (see `SECURITY.md` → *Enabling the
 > OCI container sandbox*).
+
+---
+
+## 5b. LOW-1 (v2.4.2) — OCI startup no longer runs through a shell
+
+**Was:** The OCI backend launched servers via `sh -c "exec <cmd>"`, where `<cmd>`
+was the startup line with `{{VAR}}` (including owner-editable `server.environment`)
+already substituted. Shell metacharacters (`;`, `&&`, `$(…)`, backticks) in that
+line were therefore interpreted by the in-container shell. Impact was limited
+(it runs inside the cap-dropped, no-new-privileges, single-volume container, and
+editing startup is admin-gated), so this was defense-in-depth only.
+
+**Fix:** The startup command is now tokenized (the same `tokenize()` host mode
+uses) and passed to the container as a **verbatim argv** (`run … <image>
+<program> <args…>`) — there is no `sh -c`, so metacharacters are inert
+(handed to `execve` as literal arguments). `--init` (tini) remains PID 1 and
+forwards signals. All built-in eggs already run fine as argv in host mode, so no
+egg required the shell. An empty/blank startup is now rejected in both modes.
+
+**Files:** `src/services/oci.js` (`buildRunArgs` takes `argv`),
+`src/services/processManager.js` (passes `argv: [program, ...args]`).
 
 ---
 
