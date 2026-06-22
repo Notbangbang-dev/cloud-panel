@@ -52,6 +52,14 @@ function createServer({ name, ownerId, eggId, nodeId, allocationId, memory, cpu,
   const egg = db.get('eggs', eggId);
   if (!egg) throw new Error('Invalid egg selected');
 
+  // Reject control characters (incl. CR/LF) in environment values (R2).
+  if (environment && typeof environment === 'object') {
+    for (const v of Object.values(environment)) {
+      if (typeof v === 'string' && /[\u0000-\u001f\u007f]/.test(v))
+        throw new Error('Environment values cannot contain control characters.');
+    }
+  }
+
   const alloc = allocationId ? db.get('allocations', allocationId) : pickAllocation(nodeId);
   if (!alloc) throw new Error('No free allocation available — ask an admin to add more ports.');
   if (alloc.serverId) throw new Error('That allocation is already in use');

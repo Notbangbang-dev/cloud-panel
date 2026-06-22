@@ -4,6 +4,24 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.3] — 2026-06-22
+
+### 🔒 Security — second-pass audit hardening (R1–R4)
+- **Anti-VPN/proxy now requires HTTPS (R1).** The proxy/hosting verdict is a
+  security decision, so the ip-api lookup is always made over **https**. The
+  free tier is HTTP-only, so without a Pro key the check now **fails open**
+  (doesn't block) instead of trusting MITM-spoofable cleartext — with a clear
+  warning to add a Pro key. Set it in **Admin → Settings → IP security**.
+- **Env values are control-char-safe (R2).** CR/LF and other control characters
+  are stripped from server environment values before they're passed to a host
+  process or a container `-e KEY=VALUE`, and rejected at input.
+- **Single-IP lock canonicalizes addresses (R3).** IPv4-mapped IPv6
+  (`::ffff:…`) is unwrapped, zone ids dropped, and IPv6 collapsed to its `/64`
+  — so a client's dual-stack / privacy addresses no longer cause false lockouts.
+- **Custom egg images are validated (R4).** `egg.docker` must be a real image
+  reference (no leading dash, spaces or shell characters), preventing extra
+  `docker run` flags from being smuggled via the image field.
+
 ## [2.4.2] — 2026-06-22
 
 ### 🔒 Security — OCI startup hardening (LOW-1)

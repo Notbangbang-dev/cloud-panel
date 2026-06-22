@@ -456,6 +456,19 @@ router.get('/eggs', (req, res) => {
   res.json({ data: db.all('eggs') });
 });
 
+/**
+ * Validate a container image reference (R4). Must be a plain image ref —
+ * crucially NOT starting with '-' and containing no whitespace/control chars —
+ * so it can't smuggle extra `run` flags (e.g. "--privileged") or shell-ish
+ * tokens when placed on the `docker run … <image>` line.
+ */
+function validImageRef(s) {
+  return typeof s === 'string'
+    && s.length >= 1 && s.length <= 100
+    && /^[A-Za-z0-9]/.test(s)            // starts alphanumeric (never '-', '.', '/')
+    && /^[A-Za-z0-9._:/@-]+$/.test(s);   // safe charset only (no spaces/ctrl/$/;)
+}
+
 /** Validate + normalize an egg builder payload (custom, manual-install eggs). */
 function buildEgg(body) {
   const b = body || {};
@@ -463,6 +476,9 @@ function buildEgg(body) {
   if (!name) throw new Error('Name is required.');
   const startup = String(b.startup || '').trim().slice(0, 500);
   if (!startup) throw new Error('Startup command is required.');
+  const docker = String(b.docker || 'node:lts').trim().slice(0, 100);
+  if (!validImageRef(docker))
+    throw new Error('Invalid container image — use a reference like "eclipse-temurin:21-jre" (no spaces or leading dash).');
   const variables = (Array.isArray(b.variables) ? b.variables : []).slice(0, 30).map((v) => ({
     name: String(v.name || '').slice(0, 60),
     env: String(v.env || '').toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/^_+/, '').slice(0, 40),
@@ -473,7 +489,7 @@ function buildEgg(body) {
     name,
     category: String(b.category || 'Custom').slice(0, 40),
     description: String(b.description || '').slice(0, 500),
-    docker: String(b.docker || 'node:lts').slice(0, 100),
+    docker,
     startup,
     stopCommand: String(b.stopCommand || 'stop').slice(0, 60),
     variables,

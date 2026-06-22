@@ -133,8 +133,12 @@ function buildEnv(server, egg, { host = true } = {}) {
   env.SERVER_MEMORY = String(server.limits?.memory ?? 1024);
   env.SERVER_PORT = String(primaryPort(server) ?? '');
   env.SERVER_UUID = server.uuid;
-  for (const v of egg?.variables || []) env[v.env] = v.default;
-  for (const [k, val] of Object.entries(server.environment || {})) env[k] = String(val);
+  // Strip control characters (incl. CR/LF) from values: env strings should never
+  // contain them, and it keeps a stray newline out of a container `-e KEY=VALUE`
+  // token or a host env entry (R2, defense-in-depth).
+  const clean = (v) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, '');
+  for (const v of egg?.variables || []) env[v.env] = clean(v.default);
+  for (const [k, val] of Object.entries(server.environment || {})) env[k] = clean(val);
   return env;
 }
 

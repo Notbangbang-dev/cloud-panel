@@ -114,7 +114,10 @@ function envArgs(env) {
   const args = [];
   for (const [k, v] of Object.entries(env || {})) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue; // skip illegal env names
-    args.push('-e', `${k}=${v}`);
+    // Strip control chars (incl. CR/LF) from the value so a single `-e` token
+    // can't carry a newline into the container's environment (R2).
+    const val = String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, '');
+    args.push('-e', `${k}=${val}`);
   }
   return args;
 }

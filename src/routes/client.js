@@ -650,8 +650,13 @@ router.put('/servers/:id/startup', loadServer, requirePerm('startup'), (req, res
       return res.status(403).json({ error: 'Only an administrator can change the startup command. You can edit variables below.' });
     patch.startup = startup;
   }
-  if (environment && typeof environment === 'object')
+  if (environment && typeof environment === 'object') {
+    for (const v of Object.values(environment)) {
+      if (typeof v === 'string' && /[\u0000-\u001f\u007f]/.test(v))
+        return res.status(400).json({ error: 'Environment values can’t contain control characters.' });
+    }
     patch.environment = { ...req.server.environment, ...environment };
+  }
   const updated = db.update('servers', req.server.id, patch);
   db.log({ type: 'server', serverId: req.server.id, message: 'Startup configuration updated' });
   res.json({ data: serializeServer(updated, { detail: true, user: req.user }) });

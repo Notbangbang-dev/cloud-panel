@@ -1,7 +1,8 @@
 # Cloud Panel — Security Remediation Audit Log
 
 - **Date:** 2026-06-22
-- **Base version:** 2.4.0 → **2.4.1** (security patch); **2.4.2** adds LOW-1.
+- **Base version:** 2.4.0 → **2.4.1** (security patch); **2.4.2** adds LOW-1;
+  **2.4.3** adds the second-pass findings R1–R4.
 - **Scope:** Remediation of the external "Security & Bug Audit Report" findings
   (C1, M1–M4, L1–L5) **plus** additional issues discovered during remediation,
   and a follow-up hardening of the OCI startup path (LOW-1, v2.4.2).
@@ -32,8 +33,12 @@
 | **A3** | **Admin password reset didn't revoke the target's sessions** | **Low (NEW)** | ✅ Fixed |
 | C1 | Host RCE by design (unsandboxed eggs) | Critical (accepted) | ✅ Hardened |
 | **LOW-1** | **OCI startup ran through `sh -c` with pre-substituted vars** | **Low (v2.4.2)** | ✅ Fixed |
+| **R1** | **Anti-VPN/proxy verdict fetched over cleartext HTTP (MITM-spoofable)** | **Low (v2.4.3)** | ✅ Fixed |
+| **R2** | **Server env values not stripped of CR/LF control chars** | **Low/DiD (v2.4.3)** | ✅ Fixed |
+| **R3** | **Single-IP lock stored raw IP (dual-stack/v4-mapped friction)** | **Info/Low (v2.4.3)** | ✅ Fixed |
+| **R4** | **Custom `egg.docker` image reference unvalidated** | **Info (v2.4.3)** | ✅ Fixed |
 
-**New issues found & fixed during remediation: A1, A2, A3. Follow-up: LOW-1.**
+**New issues found & fixed during remediation: A1, A2, A3. Follow-up: LOW-1, R1–R4.**
 
 ---
 
@@ -215,6 +220,48 @@ egg required the shell. An empty/blank startup is now rejected in both modes.
 
 **Files:** `src/services/oci.js` (`buildRunArgs` takes `argv`),
 `src/services/processManager.js` (passes `argv: [program, ...args]`).
+
+---
+
+## 5c. R1–R4 (v2.4.3) — second-pass hardening
+
+### R1 — Anti-VPN/proxy lookup forced to HTTPS
+**Was:** On the free tier the proxy/hosting verdict (a security decision) and the
+client IP were fetched over cleartext `http://ip-api.com`, so an on-path attacker
+on the panel's egress could spoof `proxy:false` (bypass) or `proxy:true` (DoS).
+**Fix:** The lookup is now always made over **https**. The free tier is HTTP-only,
+so without a Pro key the request fails and the control **fails open** (never
+trusting cleartext), with a one-time warning to configure a Pro key. Fail-open +
+admin-opt-in keep this Low.
+**Files:** `src/services/ipguard.js`.
+
+### R2 — Control characters stripped from env values
+**Was:** Owner-set environment values became `-e KEY=VALUE` (and host env entries)
+without stripping `\n`/`\r`. Argv-injection was already impossible (separate argv
+tokens, no shell), but stray control chars are undesirable.
+**Fix:** Control chars (`\x00–\x1f`, `\x7f`) are stripped from all env values in
+`buildEnv` and again in the OCI `-e` builder, and **rejected at input** (server
+create + startup edit) with a clear error.
+**Files:** `src/services/processManager.js`, `src/services/oci.js`,
+`src/routes/client.js`, `src/services/servers.js`.
+
+### R3 — Single-IP lock canonicalizes the address
+**Was:** The lock stored the raw `req.ip`, so IPv4↔IPv6 dual-stack, `::ffff:`
+mapping or IPv6 privacy addresses could make one client look like several IPs
+(lockout friction / evasion).
+**Fix:** New `canonicalIp()` drops zone ids, unwraps IPv4-mapped IPv6, and
+collapses IPv6 to its `/64`. Both the stored and incoming values are canonicalized
+at compare time (so existing raw locks still match).
+**Files:** `src/services/ipguard.js`.
+
+### R4 — Custom egg image reference validated
+**Was:** `egg.docker` (admin-set, capped 100 chars) was otherwise unvalidated and
+flows onto the `docker run … <image>` line.
+**Fix:** `validImageRef()` requires a real image reference — starts alphanumeric,
+safe charset only (no leading `-`, spaces, `$`, `;`, control chars) — so the
+image field can't smuggle extra `run` flags (e.g. `--privileged`). Admin-only
+boundary, so Info; this is defense-in-depth.
+**Files:** `src/routes/admin.js`.
 
 ---
 
