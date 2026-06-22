@@ -112,8 +112,8 @@ function pickFile(version) {
 
 /** Download a URL straight into a server-relative path (quota-enforced). */
 async function downloadInto(server, relPath, fileUrl) {
-  await nettrust.assertPublicUrl(fileUrl); // SSRF guard (https + public host)
-  const res = await fetch(fileUrl, { headers: { 'User-Agent': UA } });
+  // SSRF guard: https + public host, re-validated on each redirect hop.
+  const res = await nettrust.safeFetch(fileUrl, { headers: { 'User-Agent': UA } });
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status})`);
   return files.saveStream(server, relPath, Readable.fromWeb(res.body));
 }

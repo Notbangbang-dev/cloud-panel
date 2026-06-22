@@ -894,8 +894,11 @@ router.put('/account/password', (req, res) => {
   const { current, password } = req.body || {};
   if (!auth.checkPassword(req.user, current || ''))
     return res.status(403).json({ error: 'Current password is incorrect' });
-  if (!password || password.length < 8)
-    return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  try {
+    require('../services/users').validatePassword(password);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
   // Bumping tokenVersion invalidates every existing session token (revocation).
   const updated = db.update('users', req.user.id, {
     password: auth.hashPassword(password),

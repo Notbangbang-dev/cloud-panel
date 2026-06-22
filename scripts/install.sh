@@ -11,6 +11,9 @@
 # Environment overrides:
 #     CP_WEB_PORT (8080)  CP_SFTP_PORT (5657)  CP_SKIP_JAVA (0)
 #     CP_APP_DIR (/opt/cloud-panel)  CP_SERVICE (cloud-panel)  CP_USER (cloudpanel)
+#     CP_OCI (0)          set to 1 to install Docker and sandbox servers in
+#                         OCI containers (strongest isolation; see SECURITY.md)
+#     CP_OCI_RUNTIME (docker)   container engine: docker | podman
 #
 set -euo pipefail
 
@@ -22,6 +25,8 @@ SFTP_PORT="${CP_SFTP_PORT:-5657}"
 ALLOC_START="${CP_ALLOC_START:-25565}"
 ALLOC_END="${CP_ALLOC_END:-25600}"
 NODE_MAJOR="${CP_NODE_MAJOR:-20}"
+OCI_ENABLE="${CP_OCI:-0}"
+OCI_RUNTIME="${CP_OCI_RUNTIME:-docker}"
 
 c_blue='\033[1;36m'; c_grn='\033[1;32m'; c_ylw='\033[1;33m'; c_red='\033[1;31m'; c_off='\033[0m'
 say()  { echo -e "${c_blue}::${c_off} $*"; }
@@ -90,6 +95,29 @@ if ! id "$RUN_USER" >/dev/null 2>&1; then
 fi
 ok "Service user '${RUN_USER}' ready."
 
+# ---- 4b. Container engine (optional OCI sandbox) -------------------------
+if [ "$OCI_ENABLE" = "1" ]; then
+  if [ "$OCI_RUNTIME" = "podman" ]; then
+    if ! command -v podman >/dev/null 2>&1; then
+      say "Installing Podman (OCI sandbox)…"
+      apt-get install -y -q podman >/dev/null 2>&1 || warn "Could not install Podman automatically — install it, then set CP_OCI=1."
+    fi
+    command -v podman >/dev/null 2>&1 && ok "Podman $(podman --version 2>/dev/null | awk '{print $3}')"
+    warn "Rootless Podman needs NoNewPrivileges=false in the service unit — see SECURITY.md."
+  else
+    if ! command -v docker >/dev/null 2>&1; then
+      say "Installing Docker engine (OCI sandbox)…"
+      curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || warn "Docker install script failed — install Docker manually, then set CP_OCI=1."
+    fi
+    if command -v docker >/dev/null 2>&1; then
+      systemctl enable --now docker >/dev/null 2>&1 || true
+      usermod -aG docker "$RUN_USER" 2>/dev/null || true
+      ok "Docker $(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',') — '${RUN_USER}' added to the docker group."
+      warn "Membership in the 'docker' group is root-equivalent; keep this host trusted (see SECURITY.md)."
+    fi
+  fi
+fi
+
 # ---- 5. Application files -------------------------------------------------
 if [ ! -f "$SOURCE_DIR/package.json" ]; then
   if [ -n "${CP_REPO_URL:-}" ]; then
@@ -157,6 +185,13 @@ CP_JWT_TTL=7d
 CP_ALLOC_START=${ALLOC_START}
 CP_ALLOC_END=${ALLOC_END}
 EOF
+  if [ "$OCI_ENABLE" = "1" ]; then
+    {
+      echo "# OCI container sandbox — each server runs in its own container (SECURITY.md)."
+      echo "CP_OCI=1"
+      echo "CP_OCI_RUNTIME=${OCI_RUNTIME}"
+    } >> "$APP_DIR/.env"
+  fi
   chown "$RUN_USER":"$RUN_USER" "$APP_DIR/.env"
   chmod 600 "$APP_DIR/.env"
 else
@@ -236,6 +271,9 @@ ok "Cloud Panel is installed and running!"
 echo
 echo -e "  ${c_grn}Web panel${c_off}   : http://${PUBLIC_HOST}:${WEB_PORT}"
 echo -e "  ${c_grn}SFTP${c_off}        : ${PUBLIC_HOST}:${SFTP_PORT}  (user: <name>.<serverId>)"
+if [ "$OCI_ENABLE" = "1" ]; then
+  echo -e "  ${c_grn}Sandbox${c_off}     : OCI containers via ${OCI_RUNTIME} (CP_OCI=1)"
+fi
 echo
 if [ "$ADMIN_CREATED" = "1" ]; then
   echo -e "  ${c_ylw}Your administrator login:${c_off}"

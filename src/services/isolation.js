@@ -88,12 +88,17 @@ function warnUnisolated() {
     registrationOpen = !!(s && s.registration && s.registration.enabled);
   } catch { /* settings unavailable — warn generically */ }
   console.warn(
-    '[isolation] server-process isolation is INACTIVE — game/app servers run as ' +
-    'the panel user and (with code-running eggs) can read panel secrets/data. ' +
+    '[isolation] ******************************************************************\n' +
+    '[isolation] WARNING: server sandboxing is INACTIVE — game/app servers run as ' +
+    'the panel user and (with code-running eggs: Node/Python/.jar) can execute ' +
+    'arbitrary code, reading the panel DB / JWT secret and other servers\u2019 files (C1). ' +
     (registrationOpen
-      ? 'Public registration is ENABLED: only approve users you trust, or enable '
-      : 'Before allowing untrusted users, enable ') +
-    'isolation (CP_SERVER_UID/GID as root) or use containers. See SECURITY.md (C1).'
+      ? 'Public registration is ENABLED, so this is reachable by anyone who signs up. '
+      : 'Only allow users you trust until this is fixed. ') +
+    'Strongly recommended: enable the OCI container sandbox (CP_OCI=1 with ' +
+    'Docker/Podman), or per-server-user isolation (CP_SERVER_UID/GID as root). ' +
+    'See SECURITY.md (C1).\n' +
+    '[isolation] ******************************************************************'
   );
 }
 
@@ -102,6 +107,16 @@ function init() {
   // Always best-effort lock the panel's secrets so other OS users can't read
   // them, regardless of whether per-user isolation is configured.
   lockSecrets();
+
+  // If the OCI container sandbox is active, every server already runs isolated
+  // in its own container — per-server-user isolation is redundant and the C1
+  // warning would be misleading, so acknowledge that and stop here.
+  let ociActive = false;
+  try { ociActive = require('./oci').active(); } catch { /* oci optional */ }
+  if (ociActive) {
+    console.log('[isolation] server sandboxing provided by the OCI container runtime (CP_OCI).');
+    return;
+  }
 
   if (!CONFIGURED) {
     warnUnisolated();

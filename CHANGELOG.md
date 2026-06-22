@@ -4,6 +4,75 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.1] — 2026-06-22
+
+### 🔒 Security — external audit remediation
+Fixed every actionable finding from the 2026-06-22 security audit, plus three
+issues found while remediating. Full write-up in **`AUDIT_LOG.md`**.
+
+- **SSRF hardening (M1/M2).** New `nettrust.safeFetch()` follows redirects
+  **manually and re-validates every hop** against the DNS-aware public-host
+  guard. All user-influenced fetches (egg/modpack installers, Modrinth
+  downloads, automation webhooks) now use it. Automation webhooks no longer use
+  the weaker bespoke regex (which missed CGNAT/IPv4-mapped and DNS-rebind).
+- **Stripe webhook replay (M3).** Webhook signatures are now rejected unless the
+  signed timestamp is within 300s (matches Stripe's tolerance).
+- **Console session revocation (M4).** The console WebSocket re-authorizes
+  against **live** user/server records on every action and on a 15s interval —
+  password change, demotion, deletion or a revoked subuser grant now ends the
+  socket immediately.
+- **Backup download authorization (NEW, A2).** The download endpoint now
+  requires the `backup` permission, not just server access — closing a path
+  where a console-only subuser could download backups.
+- **ReDoS mitigation (NEW, A1).** Input fed to user-supplied automation regexes
+  is capped (2000 chars) to bound catastrophic-backtracking cost.
+- **Admin password reset (NEW, A3).** Now bumps `tokenVersion`, revoking the
+  target user's existing sessions (matching the self-service flow).
+- **Login enumeration (L2).** Login always runs bcrypt (dummy hash for unknown
+  users) so timing can't reveal whether an account exists.
+- **Password policy (L3).** Min 8 **and** max 72 bytes (no silent bcrypt
+  truncation), enforced on signup, setup, self-service change and admin edit.
+- **First-run setup race (L1).** Initial-admin creation is now guarded/atomic.
+- **Headers (L4).** Tighter `Permissions-Policy`; `Strict-Transport-Security`
+  gains `preload`.
+- **Custom CSS (L5).** Admin theme CSS can no longer beacon out — remote
+  `url(...)` and `@import` are stripped (relative + `data:` kept).
+- **Unsandboxed warning (C1).** Louder boot warning that recommends `CP_OCI=1`;
+  when the OCI sandbox is active the (now-incorrect) C1 warning is suppressed.
+
+## [2.4.0] — 2026-06-22
+
+### 🛡️ Added — OCI container sandbox (real isolation for untrusted users)
+Servers can now run **inside their own OCI container** instead of as host child
+processes — the strongest isolation, closing audit finding **C1** ("anyone can
+run a rootkit"). Set **`CP_OCI=1`** (with **Docker** or **Podman** installed) and
+every server starts in a container that:
+- mounts only its volume at `/home/container` (the panel's data/secrets, the
+  host, and other tenants' files are all invisible),
+- **drops all Linux capabilities** (`--cap-drop=ALL`) with
+  **`--security-opt=no-new-privileges`**,
+- enforces a **PID cap** (`CP_OCI_PIDS_LIMIT`, default 512 — fork-bomb guard) and
+  hard **memory/CPU** limits derived from the server's plan,
+- publishes only its allocated game ports.
+
+Each built-in egg already declares its image (`eclipse-temurin:21-jre`,
+`node:lts`, `python:3`, `cm2network/steamcmd`, …), so there's nothing per-server
+to set up. Live console, console input, **real CPU/RAM stats** (sampled via the
+engine), graceful stop/kill and SFTP all keep working.
+
+### 🔧 Notes
+- **Opt-in & loud-on-misconfig** (mirrors `CP_SERVER_UID/GID`): with `CP_OCI=1`
+  but no usable engine, servers **refuse to start** rather than silently running
+  unsandboxed. Unset `CP_OCI` for the unchanged host-process default.
+- `scripts/install.sh` can install Docker and wire the panel user into the
+  `docker` group when run with `CP_OCI=1`.
+- New `oci.*` config + every `CP_OCI_*` knob (runtime, image fallback, bind IP,
+  network, in-container user, read-only rootfs, pull policy, extra args) are
+  documented in `.env.example`; full threat model in **SECURITY.md**.
+- `/api/health` now reports the active `sandbox` mode (`oci` vs `host`).
+- New service `src/services/oci.js`; `src/services/processManager.js` runs the
+  container backend when active.
+
 ## [2.3.3] — 2026-06-22
 
 ### 🛡️ Added — IP security (admin-configurable)

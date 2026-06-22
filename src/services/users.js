@@ -7,12 +7,26 @@ const auth = require('../auth');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_RE = /^[a-zA-Z0-9_.-]{3,32}$/;
+const PW_MIN = 8;
+// bcrypt only considers the first 72 BYTES of the password and silently ignores
+// the rest. Reject longer inputs so users aren't given a false sense of strength
+// (and so two passwords sharing a 72-byte prefix aren't treated as identical).
+const PW_MAX_BYTES = 72;
+
+/** Validate a password (shared by signup, setup, admin edit and self-service change). */
+function validatePassword(password) {
+  const pw = String(password == null ? '' : password);
+  if (pw.length < PW_MIN) throw new Error(`password must be at least ${PW_MIN} characters`);
+  if (Buffer.byteLength(pw, 'utf8') > PW_MAX_BYTES)
+    throw new Error(`password must be at most ${PW_MAX_BYTES} bytes`);
+  return pw;
+}
 
 function validate({ username, email, password }) {
   if (!username || !email || !password) throw new Error('username, email and password are required');
   if (!USERNAME_RE.test(username)) throw new Error('username must be 3-32 chars (letters, numbers, . _ -)');
   if (!EMAIL_RE.test(email)) throw new Error('a valid email address is required');
-  if (String(password).length < 8) throw new Error('password must be at least 8 characters');
+  validatePassword(password);
 }
 
 function createUser({ username, email, password, admin = false, firstName = '', lastName = '', status, coins, resources }) {
@@ -44,4 +58,4 @@ function createUser({ username, email, password, admin = false, firstName = '', 
 const countUsers = () => db.all('users').length;
 const countAdmins = () => db.filter('users', (u) => u.admin).length;
 
-module.exports = { createUser, validate, countUsers, countAdmins, EMAIL_RE, USERNAME_RE };
+module.exports = { createUser, validate, validatePassword, countUsers, countAdmins, EMAIL_RE, USERNAME_RE };

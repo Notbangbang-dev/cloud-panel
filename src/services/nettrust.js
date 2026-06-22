@@ -12,8 +12,12 @@
  * `assertPublicUrl()` requires an https URL whose host is NOT loopback,
  * link-local, private (RFC1918 / CGNAT / ULA) or otherwise internal. For
  * hostnames it also resolves DNS and rejects the request if ANY resolved
- * address is private (best-effort anti DNS-rebind; redirect targets are not
- * re-validated, so this is a strong mitigation rather than a complete sandbox).
+ * address is private (best-effort anti DNS-rebind).
+ *
+ * `safeFetch()` builds on that: it follows redirects MANUALLY and re-validates
+ * every hop's `Location` against `assertPublicUrl`, closing the redirect-based
+ * SSRF bypass (a public URL that 30x-redirects to 169.254.169.254 / RFC1918).
+ * Use it for every outbound request whose URL is influenced by user input.
  */
 
 const net = require('net');
@@ -91,6 +95,39 @@ async function assertPublicUrl(urlStr, { protocols = ['https:'] } = {}) {
   return url;
 }
 
+/**
+ * SSRF-safe `fetch`: validates the initial URL AND every redirect hop against
+ * `assertPublicUrl`. Native `fetch` follows 3xx automatically WITHOUT
+ * re-checking the target, so we disable that (`redirect: 'manual'`) and follow
+ * the chain ourselves, re-validating each `Location`.
+ *
+ * @param {string} urlStr initial URL
+ * @param {object} [options] fetch options (method/headers/body/signal…)
+ * @param {{ protocols?: string[], maxRedirects?: number }} [guard]
+ * @returns {Promise<Response>} the final (non-redirect) response
+ */
+async function safeFetch(urlStr, options = {}, { protocols = ['https:'], maxRedirects = 5 } = {}) {
+  if (typeof fetch !== 'function') throw new Error('global fetch is unavailable (Node 18+ required)');
+  let current = (await assertPublicUrl(urlStr, { protocols })).toString();
+  for (let hop = 0; ; hop++) {
+    const res = await fetch(current, { ...options, redirect: 'manual' });
+    // undici exposes 3xx + Location when redirect:'manual' (not an opaque redirect).
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location');
+      if (!loc) return res; // a 3xx with no Location — hand back as-is
+      if (hop >= maxRedirects)
+        throw Object.assign(new Error('Too many redirects'), { code: 'EBLOCKEDURL' });
+      const next = new URL(loc, current).toString(); // resolve relative redirects
+      await assertPublicUrl(next, { protocols }); // re-validate the hop (anti-SSRF)
+      // Release the redirect response body before following the next hop.
+      try { if (res.body && typeof res.body.cancel === 'function') await res.body.cancel(); } catch { /* ignore */ }
+      current = next;
+      continue;
+    }
+    return res;
+  }
+}
+
 /** Sync best-effort check (no DNS) — used where async isn't available. */
 function isObviouslyInternal(urlStr) {
   let url;
@@ -101,4 +138,4 @@ function isObviouslyInternal(urlStr) {
   return false;
 }
 
-module.exports = { assertPublicUrl, isPrivateIp, isInternalHostname, isObviouslyInternal };
+module.exports = { assertPublicUrl, safeFetch, isPrivateIp, isInternalHostname, isObviouslyInternal };

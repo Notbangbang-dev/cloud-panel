@@ -57,17 +57,17 @@ function runSteam(args, cwd, log) {
 }
 
 async function fetchJson(url) {
-  await nettrust.assertPublicUrl(url); // SSRF guard (https + public host)
-  const res = await fetch(url, { headers: { 'User-Agent': 'CloudPanel/1.0' } });
+  // SSRF guard: https + public host, and EVERY redirect hop re-validated.
+  const res = await nettrust.safeFetch(url, { headers: { 'User-Agent': 'CloudPanel/1.0' } });
   if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
   return res.json();
 }
 
 async function download(url, dest, log) {
-  // SSRF guard: only https to public hosts. Closes the modpack-index download
-  // vector where `.mrpack` files[] could point at internal services.
-  await nettrust.assertPublicUrl(url);
-  const res = await fetch(url, { headers: { 'User-Agent': 'CloudPanel/1.0' } });
+  // SSRF guard: only https to public hosts, re-validated on each redirect hop.
+  // Closes the modpack-index vector where `.mrpack` files[] (or a 30x redirect)
+  // could point at internal services.
+  const res = await nettrust.safeFetch(url, { headers: { 'User-Agent': 'CloudPanel/1.0' } });
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${url}`);
   const total = Number(res.headers.get('content-length') || 0);
   let received = 0;

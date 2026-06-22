@@ -256,12 +256,21 @@ async function confirmCheckout(user, sessionId) {
 /* -------------------------------------------------------------------------- */
 /* Webhook (renewals / cancellations)                                          */
 /* -------------------------------------------------------------------------- */
+// Reject webhooks whose signed timestamp is too old/new — matches Stripe's
+// default tolerance and prevents indefinite replay of a captured event.
+const WEBHOOK_TOLERANCE_S = 300;
+
 function verifyWebhook(rawBody, sigHeader) {
   const secret = cfg().stripe.webhookSecret;
   if (!secret) throw new Error('Webhook secret not configured.');
   const parts = {};
   String(sigHeader || '').split(',').forEach((kv) => { const [k, v] = kv.split('='); if (k) parts[k.trim()] = (v || '').trim(); });
   if (!parts.t || !parts.v1) throw new Error('Bad signature header.');
+  // Replay protection: the timestamp must be recent (CWE-294). Checked before
+  // the HMAC so a stale-but-valid signature is still rejected.
+  const ts = Number(parts.t);
+  if (!Number.isFinite(ts) || Math.abs(Math.floor(Date.now() / 1000) - ts) > WEBHOOK_TOLERANCE_S)
+    throw new Error('Webhook timestamp outside tolerance (possible replay).');
   const payload = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody);
   const expected = crypto.createHmac('sha256', secret).update(`${parts.t}.${payload}`).digest('hex');
   const a = Buffer.from(expected), b = Buffer.from(parts.v1);

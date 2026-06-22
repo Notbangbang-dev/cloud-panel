@@ -134,6 +134,9 @@ After that, every user (with sudo) can run `sudo cloud-panel-update` anytime.
 - **Admin console** — CRUD for servers, users, nodes, locations, allocations, and
   an egg (template) catalog, plus a live capacity overview.
 - **JWT auth** + bcrypt password hashing + one-command VPS install.
+- **OCI container sandbox** (optional) — run every server in its own Docker/Podman
+  container with dropped capabilities, `no-new-privileges`, a PID cap and hard
+  CPU/RAM limits (`CP_OCI=1`). Opt-in; the default stays host processes.
 
 ### Teams, automation & game power-ups (v1.9)
 
@@ -186,6 +189,31 @@ on a given platform, it transparently falls back to an atomic JSON store
 (`data/cloud-panel.json`). Per-server files live under `data/volumes/<id>/` and are
 exposed over both the file manager and SFTP. Force the JSON store with `CP_FORCE_JSON=1`.
 
+### Container sandbox (OCI) — recommended for untrusted users
+
+By default each server runs as a **host child process**. Because several eggs
+execute user-supplied code (Node/Python/Generic Java/`.jar`), that means a
+server can read the panel's data/secrets or other servers' files unless you add
+isolation. The strongest option is the built-in **OCI container sandbox**: set
+`CP_OCI=1` (with **Docker** or **Podman** installed) and every server runs inside
+its own container, with the volume mounted at `/home/container`, all Linux
+capabilities dropped, `no-new-privileges`, a PID cap, and hard CPU/RAM limits
+derived from the server's plan. Each egg already declares its image (e.g.
+`eclipse-temurin:21-jre`, `node:lts`, `python:3`).
+
+```bash
+# In .env (or the environment):
+CP_OCI=1                 # require containers; servers refuse to start if the engine is missing
+CP_OCI_RUNTIME=docker    # or: podman
+```
+
+It's **opt-in and loud-on-misconfig** — with `CP_OCI=1` but no usable engine,
+servers refuse to start rather than silently running unsandboxed. Live console,
+console input, stats, stop/kill and SFTP all work unchanged. See
+[`.env.example`](.env.example) for every `CP_OCI_*` knob and **SECURITY.md** for
+the threat model. (The built-in *Cloud Demo* egg runs a host-path script, so it's
+a host-mode convenience and won't run inside a container — use a real egg.)
+
 ---
 
 ## Architecture
@@ -199,6 +227,8 @@ src/
   routes/                REST API (auth, client, admin) + serializers
   services/
     processManager.js    Child-process lifecycle, log streaming, provisioning
+    oci.js               OCI container sandbox (Docker/Podman) — optional isolation
+    isolation.js         Optional drop-to-unprivileged-user hardening
     stats.js             Cross-platform CPU/memory sampler (no wmic)
     files.js             Safe per-server file ops + real disk usage
     installers.js        Real egg installers (PaperMC, Vanilla)
@@ -225,12 +255,14 @@ The first SFTP connection generates a host key under `data/sftp_host.key`.
 
 ## Notes
 
-Cloud Panel runs game servers as host child processes (not Docker containers).
-CPU, memory and disk usage are **real**; per-process network isolation isn't
-available without containers, so network counters are omitted rather than faked.
-The Paper/Vanilla eggs download real server jars and need **Java** (installed by
-`scripts/install.sh`). The demo egg needs only Node.js. Point any egg's startup
-command at any binary to run other software.
+Cloud Panel runs game servers as host child processes by default; for true
+sandboxing (and safe multi-tenant/untrusted use) enable the **OCI container
+sandbox** (`CP_OCI=1` with Docker/Podman — see *Container sandbox* above).
+CPU, memory and disk usage are **real** in both modes. The Paper/Vanilla eggs
+download real server jars and need **Java** on the host (host mode, installed by
+`scripts/install.sh`) or use the egg's container image (OCI mode). The demo egg
+needs only Node.js and runs in host mode. Point any egg's startup command at any
+binary to run other software.
 
 ## License
 

@@ -72,9 +72,16 @@ function publicUser(user) {
   return rest;
 }
 
+// A fixed bcrypt hash compared against when the user (or their hash) is missing,
+// so the "no such user" path costs ~the same as a real comparison and login
+// timing can't be used to enumerate usernames (CWE-208).
+const DUMMY_HASH = bcrypt.hashSync('cloud-panel::nonexistent-account', config.bcryptRounds);
+
 function checkPassword(user, plain) {
-  if (!user) return false;
-  return bcrypt.compareSync(plain, user.password);
+  const hash = (user && typeof user.password === 'string' && user.password) || DUMMY_HASH;
+  // Always run bcrypt (even for unknown users) to keep timing uniform.
+  const ok = bcrypt.compareSync(String(plain == null ? '' : plain), hash);
+  return !!user && ok;
 }
 
 function hashPassword(plain) {

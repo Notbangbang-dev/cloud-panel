@@ -21,17 +21,26 @@ router.get('/status', (req, res) => {
   });
 });
 
+// Guards the check-and-create against concurrent setup POSTs (CWE-362): the flag
+// is set synchronously and the needsSetup() state is re-checked under it, so
+// only the first request can create the initial administrator.
+let creating = false;
+
 /** Create the first administrator. Only works while NO users exist. */
 router.post('/', setupLimiter, (req, res) => {
-  if (!db.needsSetup())
+  if (creating || !db.needsSetup())
     return res.status(403).json({ error: 'Setup has already been completed.' });
 
-  const { username, email, password, firstName, lastName } = req.body || {};
+  creating = true;
   let user;
   try {
+    if (!db.needsSetup()) return res.status(403).json({ error: 'Setup has already been completed.' });
+    const { username, email, password, firstName, lastName } = req.body || {};
     user = users.createUser({ username, email, password, admin: true, firstName, lastName });
   } catch (err) {
     return res.status(400).json({ error: err.message });
+  } finally {
+    creating = false;
   }
 
   db.log({ type: 'setup', userId: user.id, message: `Initial administrator "${user.username}" created via setup` });

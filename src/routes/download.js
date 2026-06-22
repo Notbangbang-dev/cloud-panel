@@ -13,7 +13,7 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
 const backups = require('../services/backups');
-const { canAccessServer } = require('./helpers');
+const { canAccessServer, hasPermission } = require('./helpers');
 
 const router = express.Router();
 
@@ -25,7 +25,12 @@ router.get('/dl/backups/:sid/:bid', (req, res) => {
   const server =
     db.get('servers', req.params.sid) ||
     db.find('servers', (s) => s.identifier === req.params.sid || s.uuid === req.params.sid);
-  if (!server || !canAccessServer(user, server)) return res.status(403).json({ error: 'Forbidden' });
+  // The 'download' ticket only proves identity — it carries no server/resource
+  // scope. Enforce the SAME authorization the API does: access to the server
+  // AND the 'backup' permission. Without this, a subuser with any access (e.g.
+  // console-only) could download backups they were never granted.
+  if (!server || !canAccessServer(user, server) || !hasPermission(user, server, 'backup'))
+    return res.status(403).json({ error: 'Forbidden' });
 
   const b = backups.get(server.id, req.params.bid);
   if (!b) return res.status(404).json({ error: 'Backup not found' });

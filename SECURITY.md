@@ -24,8 +24,10 @@ the host.
 Run Cloud Panel with untrusted/self-service users **only** if you add isolation.
 Recommended hardening:
 
-- **Isolate servers** — run them in containers (Docker) or as a dedicated,
-  unprivileged OS user **per server**, with the volume owned by that user.
+- **Isolate servers** — the strongest option is the built-in **OCI container
+  sandbox** (`CP_OCI=1` with Docker/Podman; see below), which runs every server
+  in its own container. Alternatively run them as a dedicated, unprivileged OS
+  user **per server**, with the volume owned by that user.
 - **Protect panel secrets** — ensure server processes cannot read the panel's
   `data/` directory, especially `data/.jwt-secret` (used to sign admin tokens)
   and the database. Run the panel as a different user than the servers.
@@ -82,6 +84,63 @@ Caveats:
   **off** and the panel logs a warning (it never silently runs unisolated as if
   isolated).
 
+## Enabling the OCI container sandbox (strongest isolation)
+
+For untrusted or multi-tenant use, run **every server inside its own OCI
+container** (Docker or Podman). The container is the sandbox: server code can't
+read the panel's database/secret, other servers' files, or the host — even for
+code-running eggs (Node/Python/Generic Java/`.jar`). This is the recommended way
+to close finding **C1**.
+
+Each built-in egg already declares its image (`eclipse-temurin:21-jre`,
+`node:lts`, `python:3`, `cm2network/steamcmd`, …), so there's nothing per-server
+to configure. On your VPS:
+
+```bash
+# 1) Install a container engine (Docker shown; Podman also works)
+curl -fsSL https://get.docker.com | sh
+
+# 2) Let the panel user talk to the engine (or run the panel as root)
+sudo usermod -aG docker cloudpanel        # the CP_USER from install.sh
+
+# 3) Require containers, then restart
+echo 'CP_OCI=1' | sudo tee -a /opt/cloud-panel/.env
+sudo systemctl restart cloud-panel
+```
+
+On boot the panel logs `[oci] container sandbox ACTIVE — servers run in docker
+containers …`. Each server then starts with:
+
+- the volume mounted at `/home/container` (and **nothing else** from the host),
+- **all Linux capabilities dropped** (`--cap-drop=ALL`) and
+  **`--security-opt=no-new-privileges`** (no privilege escalation via setuid),
+- a **PID limit** (`CP_OCI_PIDS_LIMIT`, default 512 — mitigates fork bombs),
+- hard **memory** and **CPU** caps derived from the server's plan,
+- only its allocated game ports published (default bridge networking).
+
+What it protects against (the C1 worst case): a malicious egg/server can no
+longer read `data/.jwt-secret`, the database, or other tenants' volumes, nor
+tamper with the host — it is confined to its container and resource budget.
+
+**Opt-in and loud-on-misconfig.** With `CP_OCI=1` but no usable engine, servers
+**refuse to start** (the panel never silently runs them unsandboxed). Unset
+`CP_OCI` to return to host-process mode.
+
+Notes & caveats:
+
+- The systemd unit installed by `scripts/install.sh` sets `NoNewPrivileges=true`.
+  That's fine for the **Docker** CLI (it only talks to the daemon socket) but
+  breaks **rootless Podman** (which needs `newuidmap`); for rootless Podman drop
+  that directive (`sudo systemctl edit cloud-panel` → `NoNewPrivileges=false`).
+- Adding a user to the `docker` group is **root-equivalent**. Prefer running the
+  panel as a dedicated user and treat that host as trusted, or use rootless
+  Podman (`CP_OCI_RUNTIME=podman`) for a smaller blast radius.
+- For an even stricter sandbox set `CP_OCI_READONLY=1` (read-only rootfs + a
+  scratch `/tmp`); some servers that write outside their volume may need it off.
+- Set `CP_OCI_USER=<uid:gid>` to force a non-root in-container user if the image
+  would otherwise run as root inside the container.
+- All `CP_OCI_*` options are documented in `.env.example`.
+
 ## Deployment hardening checklist
 
 - **Reverse proxy / TLS.** Terminate HTTPS at a proxy (Nginx/Caddy/Cloudflare).
@@ -118,6 +177,10 @@ Caveats:
 - On boot the panel best-effort restricts its secrets (`data/.jwt-secret`, the
   database, SFTP host key, `.env`) to `0600` even when full isolation is off, and
   logs a clear warning when servers run unisolated while registration is open.
+- Ships an opt-in **OCI container sandbox** (`CP_OCI=1`, Docker/Podman) that runs
+  each server in an isolated, capability-dropped, resource-capped container; when
+  required but unavailable it refuses to start servers rather than running them
+  unsandboxed.
 
 ## Supported versions
 

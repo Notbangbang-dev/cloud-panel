@@ -21,12 +21,17 @@
 
 const db = require('../db');
 const pm = require('./processManager');
+const nettrust = require('./nettrust');
 
 const COLL = 'automations';
 const ACTIONS = ['command', 'power', 'notify'];
 const MATCH_TYPES = ['contains', 'regex'];
 const POWER_ACTIONS = ['start', 'stop', 'restart', 'kill'];
 const ANSI_RE = /\u001b\[[0-9;]*m/g;
+// Cap the input fed to user-supplied regexes. Catastrophic backtracking (ReDoS)
+// scales with input length, so bounding it sharply limits worst-case CPU even
+// for a pathological pattern created by someone with the 'automation' grant.
+const MAX_MATCH_INPUT = 2000;
 
 const subs = new Map();             // serverId -> unsubscribe()
 const compiledByServer = new Map(); // serverId -> [{ rule, test }]
@@ -41,17 +46,19 @@ const get = (id) => db.get(COLL, id);
 /* ---- validation ---------------------------------------------------------- */
 function validRegex(src) { try { new RegExp(src); return true; } catch { return false; } }
 
-/** Block obviously-internal targets so webhooks can't be used for SSRF. */
+/**
+ * Fast, synchronous sanity check at create/update time: require an https URL
+ * that isn't an obviously-internal host or private IP literal. The AUTHORITATIVE
+ * SSRF guard (DNS resolution + per-redirect re-validation) runs at delivery time
+ * in notify() via nettrust.safeFetch — using the same canonical guard the
+ * installers use, so the CGNAT/IPv4-mapped gaps of the old bespoke regex (and
+ * DNS-rebind / redirect bypasses) are all covered there.
+ */
 function safeWebhook(u) {
   let url;
   try { url = new URL(u); } catch { return false; }
   if (url.protocol !== 'https:') return false;
-  const h = url.hostname.toLowerCase();
-  if (h === 'localhost' || h.endsWith('.localhost')) return false;
-  if (/^(127\.|10\.|0\.|169\.254\.|192\.168\.)/.test(h)) return false;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return false;
-  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return false;
-  return true;
+  return !nettrust.isObviouslyInternal(u);
 }
 
 function sanitize(input) {
@@ -130,7 +137,8 @@ function testLine(rule, line) {
   if (!match) return false;
   const matchType = MATCH_TYPES.includes(rule.matchType) ? rule.matchType : 'contains';
   if (matchType === 'regex' && !validRegex(match)) return false;
-  return buildTest({ match, matchType, caseSensitive: !!rule.caseSensitive })(String(line == null ? '' : line));
+  const sample = String(line == null ? '' : line).slice(0, MAX_MATCH_INPUT); // ReDoS input cap
+  return buildTest({ match, matchType, caseSensitive: !!rule.caseSensitive })(sample);
 }
 
 /* ---- engine -------------------------------------------------------------- */
@@ -146,7 +154,9 @@ async function notify(rule, server, line) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
-    await fetch(rule.value, {
+    // safeFetch re-resolves DNS and re-validates EVERY redirect hop, so the
+    // webhook can't be (re)pointed at internal hosts after creation.
+    await nettrust.safeFetch(rule.value, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -155,7 +165,7 @@ async function notify(rule, server, line) {
       signal: controller.signal,
     });
   } catch {
-    /* webhook failures are non-fatal */
+    /* webhook failures (and blocked-SSRF rejections) are non-fatal */
   } finally {
     clearTimeout(timer);
   }
@@ -165,7 +175,8 @@ function onConsoleLine(serverId, entry) {
   if (!entry || entry.stream === 'in') return; // ignore our own injected commands
   const compiled = compiledByServer.get(serverId);
   if (!compiled || !compiled.length) return;
-  const line = String(entry.line || '').replace(ANSI_RE, '');
+  // Cap the length tested by (user-supplied) regexes to bound ReDoS cost.
+  const line = String(entry.line || '').replace(ANSI_RE, '').slice(0, MAX_MATCH_INPUT);
   if (!line) return;
 
   const now = Date.now();

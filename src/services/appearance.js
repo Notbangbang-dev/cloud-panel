@@ -104,7 +104,9 @@ function hexToRgba(hex, a) {
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-/** Strip anything that could break out of a <style> context or run script. */
+/** Strip anything that could break out of a <style> context, run script, or
+ *  beacon out to a remote host. Same-origin (relative) and data: URLs are kept
+ *  so admins can still reference uploaded assets; only remote fetches are cut. */
 function sanitizeCustomCss(css) {
   if (typeof css !== 'string') return '';
   return css
@@ -112,7 +114,16 @@ function sanitizeCustomCss(css) {
     .replace(/<\/?style/gi, '')
     .replace(/<\/?script/gi, '')
     .replace(/expression\s*\(/gi, '')
-    .replace(/javascript\s*:/gi, '');
+    .replace(/javascript\s*:/gi, '')
+    // Drop @import entirely — it can pull in remote stylesheets (and leak the
+    // visitor's IP / referrer to an arbitrary host).
+    .replace(/@import[^;]*;?/gi, '')
+    // Neutralize remote url(...) targets (privacy beacon via background-image,
+    // cursor, etc.). Relative paths and data: URIs are left intact.
+    .replace(/url\(\s*(['"]?)([^)'"]*)\1\s*\)/gi, (m, _q, inner) => {
+      const t = String(inner).trim().toLowerCase();
+      return /^(https?:|\/\/)/.test(t) ? 'url()' : m;
+    });
 }
 
 /* ----------------------------------------------------------------------------

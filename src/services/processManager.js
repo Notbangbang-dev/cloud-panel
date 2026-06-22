@@ -9,6 +9,7 @@
 
 const { spawn } = require('child_process');
 const isolation = require('./isolation');
+const oci = require('./oci');
 const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
@@ -30,6 +31,8 @@ class Runtime extends EventEmitter {
     this.setMaxListeners(0);
     this.serverId = serverId;
     this.proc = null;
+    this.oci = false; // true when this server runs inside an OCI container
+    this.containerName = null;
     this.status = 'offline';
     this.logs = [];
     this.stats = { cpu: 0, memory: 0, memoryLimit: 0, disk: 0, diskLimit: 0, uptime: 0 };
@@ -97,6 +100,18 @@ function primaryPort(server) {
   return a ? a.port : null;
 }
 
+/** All ports a server should expose (primary + any additional allocations). */
+function serverPorts(server) {
+  const ports = [];
+  const p = primaryPort(server);
+  if (p) ports.push(p);
+  for (const id of server.additionalAllocationIds || []) {
+    const a = db.get('allocations', id);
+    if (a && a.port && !ports.includes(a.port)) ports.push(a.port);
+  }
+  return ports;
+}
+
 // SECURITY: a server process must NEVER inherit the panel's own environment —
 // that could contain CP_JWT_SECRET (→ forge admin tokens), DB paths and other
 // secrets. We start from an empty env and pass through only the handful of
@@ -107,9 +122,14 @@ const ENV_PASSTHROUGH = [
   'NUMBER_OF_PROCESSORS', 'HOSTNAME',
 ];
 
-function buildEnv(server, egg) {
+function buildEnv(server, egg, { host = true } = {}) {
   const env = {};
-  for (const k of ENV_PASSTHROUGH) if (process.env[k] !== undefined) env[k] = process.env[k];
+  // Host child processes inherit a small allow-list of host vars (PATH, etc.).
+  // Containers bring their own base environment from the image, so we start
+  // clean and pass through only the server's own variables.
+  if (host) {
+    for (const k of ENV_PASSTHROUGH) if (process.env[k] !== undefined) env[k] = process.env[k];
+  }
   env.SERVER_MEMORY = String(server.limits?.memory ?? 1024);
   env.SERVER_PORT = String(primaryPort(server) ?? '');
   env.SERVER_UUID = server.uuid;
@@ -121,29 +141,50 @@ function buildEnv(server, egg) {
 let statsLoop = null;
 let sampling = false;
 
-/** Single shared loop that samples every running process every 2s. */
+/** Apply a {cpu, memory} sample onto a runtime, filling in plan limits + disk. */
+function applyStats(r, s) {
+  const server = db.get('servers', r.serverId);
+  r.stats = {
+    cpu: s.cpu,
+    memory: s.memory,
+    memoryLimit: (server?.limits?.memory ?? 0) * 1024 * 1024,
+    disk: server ? files.diskUsage(server) : r.stats.disk,
+    diskLimit: (server?.limits?.disk ?? 0) * 1024 * 1024,
+    uptime: Date.now() - r.startedAt,
+  };
+  r.emit('stats', r.stats);
+}
+
+/** Single shared loop that samples every running process/container every 2s. */
 function ensureStatsLoop() {
   if (statsLoop) return;
   statsLoop = setInterval(async () => {
     if (sampling) return;
-    const active = [...runtimes.values()].filter((r) => r.proc && r.proc.pid);
-    if (!active.length) return;
+    const running = [...runtimes.values()].filter((r) => r.proc);
+    // Host processes are sampled by PID; containers by name (their real PID is
+    // not the panel's child — the engine client is — so pidusage can't see them).
+    const hostRts = running.filter((r) => !r.oci && r.proc.pid);
+    const ociRts = running.filter((r) => r.oci && r.containerName);
+    if (!hostRts.length && !ociRts.length) return;
     sampling = true;
     try {
-      const result = await stats.sample(active.map((r) => r.proc.pid));
-      for (const r of active) {
-        const s = result.get(r.proc.pid);
-        if (!s) continue;
-        const server = db.get('servers', r.serverId);
-        r.stats = {
-          cpu: s.cpu,
-          memory: s.memory,
-          memoryLimit: (server?.limits?.memory ?? 0) * 1024 * 1024,
-          disk: server ? files.diskUsage(server) : r.stats.disk,
-          diskLimit: (server?.limits?.disk ?? 0) * 1024 * 1024,
-          uptime: Date.now() - r.startedAt,
-        };
-        r.emit('stats', r.stats);
+      let hostResult = new Map();
+      let ociResult = new Map();
+      await Promise.all([
+        hostRts.length
+          ? stats.sample(hostRts.map((r) => r.proc.pid)).then((m) => { hostResult = m; })
+          : Promise.resolve(),
+        ociRts.length
+          ? oci.sampleStats(ociRts.map((r) => r.containerName)).then((m) => { ociResult = m; })
+          : Promise.resolve(),
+      ]);
+      for (const r of hostRts) {
+        const s = hostResult.get(r.proc.pid);
+        if (s) applyStats(r, s);
+      }
+      for (const r of ociRts) {
+        const s = ociResult.get(r.containerName);
+        if (s) applyStats(r, s);
       }
     } catch {
       /* ignore sampling errors */
@@ -193,11 +234,21 @@ const manager = {
     if (r.status === 'installing') return { ok: false, error: 'Server is currently installing' };
     if (server.suspended) return { ok: false, error: 'Server is suspended' };
 
+    // When container isolation is REQUIRED (CP_OCI=1) but the engine is missing,
+    // refuse to start rather than silently running unsandboxed (see oci.js).
+    if (oci.enabled() && !oci.available()) {
+      return {
+        ok: false,
+        error: `Container sandbox required (CP_OCI=1) but the '${oci.runtimeName()}' engine is unavailable. Install it or unset CP_OCI.`,
+      };
+    }
+    const useOci = oci.active();
+
     const egg = db.get('eggs', server.eggId);
     const dir = volumeDir(server);
     const cmd = resolveStartup(server, egg);
     const [program, ...args] = tokenize(cmd);
-    if (!program) return { ok: false, error: 'Invalid startup command' };
+    if (!cmd || (!useOci && !program)) return { ok: false, error: 'Invalid startup command' };
 
     r.setStatus('starting');
     r.startedAt = Date.now();
@@ -206,13 +257,27 @@ const manager = {
 
     let proc;
     try {
-      isolation.chownTree(dir); // make sure the unprivileged server user owns its volume
-      proc = spawn(program, args, {
-        cwd: dir,
-        env: buildEnv(server, egg),
-        windowsHide: true,
-        ...isolation.spawnCreds(), // drop to the server user when isolation is enabled
-      });
+      if (useOci) {
+        const env = buildEnv(server, egg, { host: false });
+        const { name, image, args: runArgs } = oci.buildRunArgs({
+          server, egg, cmd, dir, ports: serverPorts(server), env,
+        });
+        r.oci = true;
+        r.containerName = name;
+        r.pushLine(`\u001b[90m[oci] ${oci.runtimeName()} run ${image} — sandboxed container '${name}'\u001b[0m`);
+        oci.removeSync(server.id); // clear any container left over from an unclean shutdown
+        proc = spawn(oci.runtimeName(), runArgs, { windowsHide: true });
+      } else {
+        r.oci = false;
+        r.containerName = null;
+        isolation.chownTree(dir); // make sure the unprivileged server user owns its volume
+        proc = spawn(program, args, {
+          cwd: dir,
+          env: buildEnv(server, egg),
+          windowsHide: true,
+          ...isolation.spawnCreds(), // drop to the server user when isolation is enabled
+        });
+      }
     } catch (err) {
       r.setStatus('crashed');
       r.pushLine(`\u001b[31m[Cloud Panel] Failed to spawn: ${err.message}\u001b[0m`, 'err');
@@ -246,6 +311,9 @@ const manager = {
     proc.on('exit', (code, signal) => {
       clearTimeout(runningTimer);
       if (proc.pid) stats.forget(proc.pid);
+      // Ensure the container is gone even if `--rm` didn't fire (e.g. the engine
+      // client died abnormally). Best-effort; ignores "no such container".
+      if (r.oci && r.containerName) { oci.remove(server.id).catch(() => {}); }
       r.proc = null;
       const wasStopping = r.status === 'stopping';
       const clean = code === 0 || signal === 'SIGTERM' || signal === 'SIGINT';
@@ -279,9 +347,15 @@ const manager = {
     r.setStatus('stopping');
     r.pushLine(`\u001b[36m[Cloud Panel]\u001b[0m Stopping server...`);
     if (stopCmd === '^C' || stopCmd === 'SIGINT') {
-      r.proc.kill('SIGINT');
+      // Containers: signal the container's main process; host: signal the child.
+      if (r.oci && r.containerName) oci.signal(server.id, 'INT').catch(() => {});
+      else r.proc.kill('SIGINT');
     } else if (r.proc.stdin.writable) {
+      // Graceful in-game stop ("stop"/"end"/…). Works for both: the container's
+      // stdin is attached to the engine client we spawned with `run -i`.
       r.proc.stdin.write(`${stopCmd}\n`);
+    } else if (r.oci && r.containerName) {
+      oci.stop(server.id).catch(() => {});
     } else {
       r.proc.kill('SIGTERM');
     }
@@ -291,7 +365,9 @@ const manager = {
       if (r.proc === proc && proc && !proc.killed) {
         r.pushLine(`\u001b[31m[Cloud Panel] Graceful stop timed out — killing.\u001b[0m`, 'err');
         try {
-          proc.kill('SIGKILL');
+          // Killing the engine client may not stop the container, so kill it by name.
+          if (r.oci && r.containerName) oci.kill(server.id).catch(() => {});
+          else proc.kill('SIGKILL');
         } catch {}
       }
     }, 12000);
@@ -305,7 +381,8 @@ const manager = {
     r.setStatus('stopping');
     r.pushLine(`\u001b[31m[Cloud Panel] Killing process...\u001b[0m`, 'err');
     try {
-      r.proc.kill('SIGKILL');
+      if (r.oci && r.containerName) oci.kill(server.id).catch(() => {});
+      else r.proc.kill('SIGKILL');
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -390,7 +467,8 @@ const manager = {
     for (const r of runtimes.values()) {
       if (r.proc) {
         try {
-          r.proc.kill('SIGTERM');
+          if (r.oci && r.containerName) oci.stop(r.serverId, { timeout: 5 }).catch(() => {});
+          else r.proc.kill('SIGTERM');
         } catch {}
       }
     }

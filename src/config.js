@@ -42,6 +42,12 @@ function int(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Parse a boolean-ish env value ("1"/"true"/"yes"/"on"). */
+function bool(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return /^(1|true|yes|on)$/i.test(String(value).trim());
+}
+
 /**
  * Resolve a value safe to pass to Express's `trust proxy` setting.
  * Defaults to `false` (do not trust client-supplied X-Forwarded-* headers).
@@ -116,6 +122,44 @@ const config = {
   // them with `id -u cp-servers` / `id -g cp-servers`. See SECURITY.md.
   serverUid: int(process.env.CP_SERVER_UID, null),
   serverGid: int(process.env.CP_SERVER_GID, null),
+
+  // ---- OCI container sandbox (optional; strongest isolation) --------------
+  // When enabled, every game/app server runs inside its own OCI container
+  // (Docker or Podman) instead of as a host child process. The container is
+  // the sandbox: server code can't read the panel's data/secrets, other
+  // servers' files, or the host — even for code-running eggs (Node/Python/jar).
+  // Each egg already declares its image in `egg.docker`. This is opt-in and
+  // loud-on-misconfig (mirrors CP_SERVER_UID/GID): when CP_OCI=1 but the
+  // runtime is unavailable, servers refuse to start rather than silently run
+  // unsandboxed. See SECURITY.md.
+  oci: {
+    // Require containers for every server. When on but the runtime is missing,
+    // starts fail loudly (we never silently fall back to host processes).
+    enabled: bool(process.env.CP_OCI),
+    // Container engine CLI: "docker" (default) or "podman" (drop-in, rootless-capable).
+    runtime: (process.env.CP_OCI_RUNTIME || 'docker').trim(),
+    // Fallback image when an egg has no `docker` image set (rare; all built-in eggs do).
+    image: (process.env.CP_OCI_IMAGE || '').trim(),
+    // Host IP to publish game ports on ("" = all interfaces / 0.0.0.0).
+    bind: (process.env.CP_OCI_BIND || '').trim(),
+    // Container network: "" = default bridge (ports are published); or "host", a network name…
+    network: (process.env.CP_OCI_NETWORK || '').trim(),
+    // Run as this in-container user "uid[:gid]" ("" = the image's own user).
+    user: (process.env.CP_OCI_USER || '').trim(),
+    // In-container working directory the server volume is mounted at.
+    workdir: (process.env.CP_OCI_WORKDIR || '/home/container').trim(),
+    // Max process/thread count per container (anti fork-bomb). 0 disables the cap.
+    pidsLimit: int(process.env.CP_OCI_PIDS_LIMIT, 512),
+    // Derive a hard `--cpus` cap from each server's CPU limit (100 = 1 core).
+    cpuLimit: bool(process.env.CP_OCI_CPU_LIMIT, true),
+    // Read-only root filesystem (+ tmpfs /tmp). Off by default — some servers
+    // write outside their volume; enable for the strictest sandbox.
+    readOnly: bool(process.env.CP_OCI_READONLY),
+    // Image pull policy passed to `run`: missing | always | never.
+    pull: (process.env.CP_OCI_PULL || 'missing').trim(),
+    // Advanced: extra args appended to every `run` (shell-style, quotes honored).
+    extraArgs: (process.env.CP_OCI_EXTRA_ARGS || '').trim(),
+  },
 
   // ---- Storage ------------------------------------------------------------
   dataDir: DATA_DIR,

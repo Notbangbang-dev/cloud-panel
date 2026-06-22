@@ -20,6 +20,7 @@ const schedules = require('./services/schedules');
 const players = require('./services/players');
 const metrics = require('./services/metrics');
 const isolation = require('./services/isolation');
+const oci = require('./services/oci');
 const billing = require('./services/billing');
 const consoleWs = require('./ws/console');
 const sftp = require('./sftp/sftpServer');
@@ -27,6 +28,7 @@ const { securityHeaders } = require('./middleware');
 
 db.load();
 isolation.init(); // optional: lock panel internals + enable per-server-user isolation
+oci.init(); // optional: run servers in OCI containers (CP_OCI=1); warns if required but unavailable
 automations.init(); // start watching consoles for servers that have rules
 schedules.init(); // start the cron scheduler for time-based tasks
 players.init(); // track live player rosters from console output
@@ -56,11 +58,15 @@ app.get('/api/health', (req, res) => {
     const b = appearance.get().brand || {};
     brand = { name: b.name || config.brand.name, tagline: b.tagline || config.brand.tagline };
   } catch { /* fall back to config brand */ }
+  let sandbox;
+  try { const s = oci.status(); sandbox = { mode: s.active ? 'oci' : 'host', runtime: s.runtime, active: s.active }; }
+  catch { sandbox = { mode: 'host' }; }
   res.json({
     status: 'ok',
     brand,
     ports: { web: config.webPort, sftp: config.sftpPort },
     store: db.backend ? db.backend.kind : 'unknown',
+    sandbox,
     time: new Date().toISOString(),
   });
 });

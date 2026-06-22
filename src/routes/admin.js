@@ -77,7 +77,14 @@ router.patch('/users/:id', (req, res) => {
   if (firstName !== undefined) patch.firstName = firstName;
   if (lastName !== undefined) patch.lastName = lastName;
   if (admin !== undefined) patch.admin = !!admin;
-  if (password) patch.password = auth.hashPassword(password);
+  if (password) {
+    try { users.validatePassword(password); }
+    catch (err) { return res.status(400).json({ error: err.message }); }
+    patch.password = auth.hashPassword(password);
+    // Changing the password from the admin panel invalidates the target user's
+    // existing sessions too (revocation), matching the self-service flow.
+    patch.tokenVersion = (user.tokenVersion || 0) + 1;
+  }
   if (status && ['active', 'pending', 'declined'].includes(status)) patch.status = status;
   if (coins !== undefined) patch.coins = Math.max(0, Math.floor(Number(coins) || 0));
   if (avatar !== undefined) patch.avatar = avatar ? String(avatar).slice(0, 512) : null; // set/clear profile picture

@@ -52,7 +52,10 @@ router.post('/login', loginLimiter, async (req, res) => {
     (u) => u.username.toLowerCase() === needle || u.email.toLowerCase() === needle
   );
 
-  if (!user || !auth.checkPassword(user, password))
+  // Always call checkPassword (it runs bcrypt against a dummy hash when `user`
+  // is null) so the response time doesn't reveal whether the account exists.
+  const passwordOk = auth.checkPassword(user, password);
+  if (!user || !passwordOk)
     return res.status(401).json({ error: 'Invalid credentials' });
   if (user.status === 'declined')
     return res.status(403).json({ error: 'Your account request was declined.' });
