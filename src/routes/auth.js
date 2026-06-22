@@ -8,6 +8,7 @@ const config = require('../config');
 const settings = require('../services/settings');
 const users = require('../services/users');
 const billing = require('../services/billing');
+const ipguard = require('../services/ipguard');
 const { rateLimit } = require('../middleware');
 
 const router = express.Router();
@@ -40,7 +41,7 @@ router.get('/config', (req, res) => {
   });
 });
 
-router.post('/login', loginLimiter, (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { login, password } = req.body || {};
   if (!login || !password)
     return res.status(400).json({ error: 'Username/email and password are required' });
@@ -55,6 +56,14 @@ router.post('/login', loginLimiter, (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   if (user.status === 'declined')
     return res.status(403).json({ error: 'Your account request was declined.' });
+
+  // IP controls (admins exempt). Anti-VPN first, then single-IP bind/verify.
+  if (!user.admin) {
+    const vpn = await ipguard.vpnBlockReason(req.ip);
+    if (vpn) return res.status(403).json({ error: vpn });
+    const locked = ipguard.singleIpCheck(user, req.ip);
+    if (locked) return res.status(403).json({ error: locked });
+  }
 
   // If the account has 2FA enabled, the password is only step one — issue a
   // short-lived, single-purpose ticket and ask for the authenticator code.
@@ -95,9 +104,13 @@ router.post('/2fa', twoFaLimiter, (req, res) => {
 });
 
 /** Public self-service registration (if enabled). */
-router.post('/register', registerLimiter, (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
   if (!settings.registrationEnabled())
     return res.status(403).json({ error: 'Public sign-ups are currently disabled.' });
+
+  // Block VPN/proxy sign-ups when anti-VPN is on.
+  const vpn = await ipguard.vpnBlockReason(req.ip);
+  if (vpn) return res.status(403).json({ error: vpn });
 
   const { username, email, password, firstName, lastName } = req.body || {};
   const status = settings.requireApproval() ? 'pending' : 'active';
@@ -107,6 +120,7 @@ router.post('/register', registerLimiter, (req, res) => {
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
+  try { ipguard.singleIpCheck(user, req.ip); } catch {} // bind to first IP
   db.log({ type: 'auth', userId: user.id, message: `${user.username} registered (${status})` });
   res.status(201).json({ token: auth.sign(user), user: auth.publicUser(user), status });
 });

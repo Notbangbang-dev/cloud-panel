@@ -196,6 +196,7 @@
     adminDeleteAchievement(id) { return this.del(`/admin/achievements/${id}`); },
     adminAnalytics() { return this.get('/admin/analytics'); },
     adminImpersonate(id) { return this.post(`/admin/users/${id}/impersonate`); },
+    adminResetIp(id) { return this.post(`/admin/users/${id}/reset-ip`); },
     adminCreateEgg(body) { return this.post('/admin/eggs', body); },
     adminUpdateEgg(id, body) { return this.put(`/admin/eggs/${id}`, body); },
     adminDeleteEgg(id) { return this.del(`/admin/eggs/${id}`); },

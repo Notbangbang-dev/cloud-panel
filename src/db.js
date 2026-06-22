@@ -52,8 +52,8 @@ const SETTINGS_DEFAULTS = {
   // Admin → Databases; servers then provision real databases against them.
   // Each host: { id, name, host, port, username, password, phpMyAdminUrl }.
   databaseHosts: [],
-  // Security — two-factor authentication policy.
-  security: { force2faAdmins: false },
+  // Security — 2FA policy + IP controls (single-IP lock, anti-VPN/proxy).
+  security: { force2faAdmins: false, singleIp: false, antiVpn: false, blockHosting: false, ipApiKey: '' },
   // Daily login reward — coins once per (UTC) day, with an optional streak bonus.
   dailyReward: { enabled: false, coins: 100, streakBonus: 0, maxBonus: 0 },
   // Maintenance mode — when on, non-admins are locked out with a custom notice.
@@ -599,6 +599,7 @@ function migrateUsers() {
     if (u.trialUsed === undefined) patch.trialUsed = false;
     if (u.stripeCustomerId === undefined) patch.stripeCustomerId = null;
     if (u.stripeSubId === undefined) patch.stripeSubId = null;
+    if (u.lockedIp === undefined) patch.lockedIp = null; // single-IP lock
     // Two-factor (TOTP). `totp` holds the secret + recovery codes; `twoFactor`
     // mirrors the enabled flag for backward-compatible reads.
     if (u.totp === undefined) patch.totp = { enabled: !!u.twoFactor, secret: null, backupCodes: [] };

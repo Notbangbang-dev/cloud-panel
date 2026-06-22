@@ -419,6 +419,11 @@
         h('label', { class: 'field' }, h('span', {}, 'New password'), password),
         h('label', { class: 'field' }, h('span', {}, 'Coins'), coins)),
       adminToggleRow(admin),
+      h('div', { class: 'switch-row' },
+        h('div', {}, h('b', {}, 'Locked IP'), h('div', { class: 'muted', style: { fontSize: '12.5px' } }, u.lockedIp || 'Not locked to an IP')),
+        h('div', { style: { marginLeft: 'auto' } }, u.lockedIp
+          ? h('button', { class: 'btn sm ghost', onclick: async () => { try { await CP.api.adminResetIp(u.id); CP.ui.toast('Locked IP reset', 'ok'); ref.close(); done(); } catch (e) { CP.ui.toast(e.message, 'err'); } } }, 'Reset')
+          : h('span', { class: 'faint', style: { fontSize: '12px' } }, '—'))),
       h('div', { class: 'section-title', style: { margin: '14px 0 6px' } }, 'Resource quota'),
       h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(3, 1fr)', gap: '0 12px' } },
         h('label', { class: 'field' }, h('span', {}, 'RAM (MB)'), mem),
@@ -464,6 +469,10 @@
     const regEnabled = sw(s.registration.enabled);
     const regApproval = sw(s.registration.requireApproval);
     const force2fa = sw(s.security && s.security.force2faAdmins);
+    const singleIp = sw(s.security && s.security.singleIp);
+    const antiVpn = sw(s.security && s.security.antiVpn);
+    const blockDc = sw(s.security && s.security.blockHosting);
+    const ipApiKey = h('input', { value: (s.security && s.security.ipApiKey) || '', placeholder: 'ip-api.com Pro key (optional)' });
     const dCoins = numIn(s.defaults.coins), dMem = numIn(s.defaults.memory), dCpu = numIn(s.defaults.cpu), dDisk = numIn(s.defaults.disk), dServers = numIn(s.defaults.servers), dBackups = numIn(s.defaults.backups), dDatabases = numIn(s.defaults.databases ?? 1);
     const minMem = numIn(s.limits.minMemory), minCpu = numIn(s.limits.minCpu), minDisk = numIn(s.limits.minDisk);
     const shop = {};
@@ -512,7 +521,7 @@
           databases: { price: +shop.databases.price.value, amount: +shop.databases.amount.value },
         },
         afk: { enabled: afkOn.checked, coins: +afkCoins.value, intervalSeconds: +afkInterval.value },
-        security: { force2faAdmins: force2fa.checked },
+        security: { force2faAdmins: force2fa.checked, singleIp: singleIp.checked, antiVpn: antiVpn.checked, blockHosting: blockDc.checked, ipApiKey: ipApiKey.value },
         dailyReward: { enabled: drOn.checked, coins: +drCoins.value, streakBonus: +drStreak.value, maxBonus: +drMax.value },
         maintenance: { enabled: mtOn.checked, title: mtTitle.value, message: mtMsg.value, allowAdmins: true, scheduleEnabled: mtSched.checked, start: mtStart.value ? new Date(mtStart.value).toISOString() : '', end: mtEnd.value ? new Date(mtEnd.value).toISOString() : '' },
         banner: { enabled: bnOn.checked, text: bnText.value, style: bnStyle.value },
@@ -533,6 +542,14 @@
             switchRow('Require approval', 'New sign-ups must be approved before they can create servers.', regApproval),
             switchRow('Economy & shop', 'Enable coins and the resource shop.', econEnabled),
             switchRow('Recommend admin 2FA', 'Show a security reminder to admins without two-factor enabled.', force2fa))),
+        h('div', { class: 'card' },
+          h('h3', { html: `${icon('shield', 16)} IP security` }),
+          h('div', { style: { marginTop: '8px' } },
+            switchRow('Lock to one IP', 'Bind each account to the first IP it signs in from (admins exempt).', singleIp),
+            switchRow('Block VPNs & proxies', 'Reject sign-in/sign-up from VPN/proxy IPs (via ip-api.com).', antiVpn),
+            switchRow('Also block datacenters', 'Treat hosting/datacenter IPs as VPNs too.', blockDc)),
+          field('ip-api.com Pro key (optional, enables HTTPS)', ipApiKey),
+          h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '6px' } }, 'Needs the real client IP — set CP_TRUST_PROXY if behind a proxy/tunnel.')),
         h('div', { class: 'card' },
           h('h3', { html: `${icon('zap', 16)} New-user defaults` }),
           h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 12px', marginTop: '8px' } },

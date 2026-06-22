@@ -13,6 +13,7 @@ const settings = require('../services/settings');
 const appearance = require('../services/appearance');
 const achievements = require('../services/achievements');
 const billing = require('../services/billing');
+const ipguard = require('../services/ipguard');
 const ledger = require('../services/ledger');
 const backups = require('../services/backups');
 const subusers = require('../services/subusers');
@@ -91,6 +92,15 @@ router.patch('/users/:id', (req, res) => {
     };
   }
   res.json({ data: auth.publicUser(db.update('users', user.id, patch)) });
+});
+
+/* ---- Reset a user's locked IP (single-IP lock) -------------------------- */
+router.post('/users/:id/reset-ip', (req, res) => {
+  const u = db.get('users', req.params.id);
+  if (!u) return res.status(404).json({ error: 'User not found' });
+  ipguard.resetIp(u.id);
+  db.log({ type: 'admin', userId: req.user.id, message: `Reset locked IP for ${u.username}` });
+  res.json({ ok: true });
 });
 
 /* ---- View as user (impersonation) --------------------------------------- */

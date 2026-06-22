@@ -4,6 +4,25 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.3] — 2026-06-22
+
+### 🛡️ Added — IP security (admin-configurable)
+New **IP security** card in **Admin → Settings**, all toggleable:
+- **Lock to one IP** — each non-admin account is bound to the first IP it signs
+  in from; sign-ins (and reused sessions) from any other IP are blocked
+  server-side. Admins can **reset a user's locked IP** from the edit-user dialog.
+- **Block VPNs & proxies** — rejects sign-in/sign-up from VPN/proxy IPs via
+  **ip-api.com** (keyless free tier, or paste an ip-api **Pro key** for HTTPS).
+  Optional **"also block datacenters/hosting"** sub-toggle.
+- **Admins are always exempt**; lookups are cached and **fail-open** (an outage
+  never locks everyone out); localhost/private IPs are never blocked.
+
+### 🔧 Notes
+- These need the **real client IP** — set `CP_TRUST_PROXY` when running behind a
+  reverse proxy / tunnel, or everyone will look like the proxy's IP.
+- New `security.{singleIp,antiVpn,blockHosting,ipApiKey}` settings + per-user
+  `lockedIp` migrate automatically.
+
 ## [2.3.2] — 2026-06-21
 
 ### ♻️ Changed — economy vs. paid plans

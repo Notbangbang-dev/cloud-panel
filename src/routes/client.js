@@ -25,6 +25,7 @@ const friends = require('../services/friends');
 const presence = require('../services/presence');
 const ledger = require('../services/ledger');
 const billing = require('../services/billing');
+const ipguard = require('../services/ipguard');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -36,6 +37,13 @@ router.use(auth.authRequired);
 
 // Track presence on every authenticated client request (in-memory, cheap).
 router.use((req, res, next) => { presence.touch(req.user.id); next(); });
+
+// Single-IP lock — block a session reused from an IP other than the bound one.
+router.use((req, res, next) => {
+  const reason = ipguard.singleIpCheck(req.user, req.ip);
+  if (reason) return res.status(403).json({ error: reason, ipLocked: true });
+  next();
+});
 
 // Maintenance mode — lock non-admins out of the whole client API with a notice.
 // Admins keep full access so they can still manage the panel while it's "down".

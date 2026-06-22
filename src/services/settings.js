@@ -91,6 +91,10 @@ function update(patch = {}) {
 
   if (!cur.security) cur.security = {};
   cur.security.force2faAdmins = !!cur.security.force2faAdmins;
+  cur.security.singleIp = !!cur.security.singleIp;
+  cur.security.antiVpn = !!cur.security.antiVpn;
+  cur.security.blockHosting = !!cur.security.blockHosting;
+  cur.security.ipApiKey = String(cur.security.ipApiKey || '').slice(0, 120);
   cur.economy.enabled = !!cur.economy.enabled;
   cur.registration.enabled = !!cur.registration.enabled;
   cur.registration.requireApproval = !!cur.registration.requireApproval;
