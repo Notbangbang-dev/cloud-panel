@@ -30,6 +30,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const config = require('../config');
+const { rateLimit } = require('../middleware');
 const { canAccessServer, serializeServer, serializeAllocation, hasPermission, isOwner } = require('./helpers');
 
 const router = express.Router();
@@ -282,24 +283,40 @@ router.put('/account/theme', (req, res) => {
   res.json({ data: { themePreset: updated.themePreset } });
 });
 
-const AVATAR_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+// SECURITY: verify the file's CONTENT is a real image (magic bytes) rather than
+// trusting the client-supplied filename/extension. This (plus the global
+// X-Content-Type-Options: nosniff and the image-only extensions we write) stops
+// someone storing HTML/SVG/script bytes under a ".png" name. SVG is NOT accepted
+// (it can carry script). The stored extension is derived from the real type.
+function sniffImage(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 12) return null;
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'gif'; // GIF8
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'webp'; // RIFF…WEBP
+  return null;
+}
 
-// Upload a profile picture (raw bytes; image types only, ≤ 3 MB).
-router.post('/account/avatar', express.raw({ type: () => true, limit: '3mb' }), (req, res) => {
-  const filename = String((req.query && req.query.filename) || 'avatar');
-  const ext = path.extname(filename).toLowerCase().replace('.', '').slice(0, 8);
-  if (!AVATAR_TYPES[ext]) return res.status(400).json({ error: 'Use a png, jpg, gif or webp image.' });
+const avatarLimiter = rateLimit({ windowMs: 60000, max: 12, message: 'Too many avatar uploads — wait a minute and try again.' });
+
+// Upload a profile picture (raw bytes; real images only, ≤ 3 MB).
+router.post('/account/avatar', avatarLimiter, express.raw({ type: () => true, limit: '3mb' }), (req, res) => {
   const buf = req.body;
   if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: 'Empty upload' });
+  const kind = sniffImage(buf);
+  if (!kind) return res.status(400).json({ error: 'Upload a real PNG, JPG, GIF or WebP image.' });
   const dir = path.join(config.uploadsDir, 'avatars');
   try {
     fs.mkdirSync(dir, { recursive: true });
-    const name = `${req.user.id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}.${ext}`;
+    // Filename is fully server-generated (user id + time + random + verified ext)
+    // — no part of the client filename is used, so no path-traversal surface.
+    const name = `${req.user.id}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${kind}`;
     fs.writeFileSync(path.join(dir, name), buf);
     // Best-effort cleanup of the user's previous avatar file.
     const prev = req.user.avatar;
     if (prev && /^\/uploads\/avatars\/[\w.-]+$/.test(prev)) {
-      try { fs.rmSync(path.join(config.uploadsDir, 'avatars', path.basename(prev)), { force: true }); } catch {}
+      try { fs.rmSync(path.join(dir, path.basename(prev)), { force: true }); } catch {}
     }
     const url = `/uploads/avatars/${name}`;
     db.update('users', req.user.id, { avatar: url });

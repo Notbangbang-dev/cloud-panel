@@ -2,7 +2,7 @@
 
 - **Date:** 2026-06-22
 - **Base version:** 2.4.0 → **2.4.1** (security patch); **2.4.2** adds LOW-1;
-  **2.4.3** adds the second-pass findings R1–R4.
+  **2.4.3** adds the second-pass findings R1–R4; **2.4.4** hardens avatar uploads.
 - **Scope:** Remediation of the external "Security & Bug Audit Report" findings
   (C1, M1–M4, L1–L5) **plus** additional issues discovered during remediation,
   and a follow-up hardening of the OCI startup path (LOW-1, v2.4.2).
@@ -262,6 +262,35 @@ safe charset only (no leading `-`, spaces, `$`, `;`, control chars) — so the
 image field can't smuggle extra `run` flags (e.g. `--privileged`). Admin-only
 boundary, so Info; this is defense-in-depth.
 **Files:** `src/routes/admin.js`.
+
+---
+
+## 5d. Avatar upload hardening (v2.4.4)
+
+**Context:** A self-service avatar upload already existed but trusted the
+client-supplied `?filename=` extension and never inspected the bytes.
+
+**Fixes:**
+- **Content sniffing:** `POST /account/avatar` now validates magic bytes (PNG /
+  JPEG / GIF / WebP) and derives the stored extension from the verified type;
+  SVG and any non-image payload are rejected. With the global `nosniff` header,
+  a stored avatar can't be served as HTML/script.
+- **Server-generated filenames:** `<userId>-<ts>-<rand>.<verified-ext>` — no part
+  of the client filename is used (no path traversal).
+- **Rate limit:** 12 uploads/min.
+- **Admin field validation:** `PATCH /admin/users/:id` `avatar` only accepts a
+  same-origin `/uploads/avatars/…` path (or null), blocking remote/script URLs
+  and CSS/HTML injection (the avatar is rendered into an `<img src>` and a CSS
+  `url()`).
+- **Default avatar** changed from initials-on-gradient to a neutral icon (no
+  security impact; product polish).
+
+**Validation:** live instance (isolated data dir) — real PNG/JPEG accepted;
+HTML-renamed-`.png` and SVG rejected (400); admin remote-URL avatar stored as
+null; valid uploaded path accepted. 8/8 assertions passed.
+
+**Files:** `src/routes/client.js`, `src/routes/admin.js`,
+`public/js/pages/account.js`, `public/js/app.js`, `public/js/ui.js`.
 
 ---
 

@@ -61,11 +61,15 @@
     const twofaCard = h('div', { class: 'card' }, CP.spinner('Loading 2FA…'));
     buildTwoFactor(twofaCard);
 
-    /* Appearance — profile picture + personal theme */
+    /* Profile picture (its own card so it's easy to find) */
+    const pfpCard = h('div', { class: 'card' });
+    buildProfilePic(pfpCard);
+
+    /* Appearance — personal theme */
     const appearanceCard = h('div', { class: 'card' }, CP.spinner('Loading appearance…'));
     buildAppearance(appearanceCard);
 
-    root.appendChild(h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } }, profile, emailCard, passCard, twofaCard, appearanceCard));
+    root.appendChild(h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))' } }, profile, emailCard, passCard, twofaCard, pfpCard, appearanceCard));
 
     /* Activity */
     root.appendChild(h('div', { class: 'section-title' }, 'Recent Activity'));
@@ -87,21 +91,20 @@
     }
   };
 
-  async function buildAppearance(card) {
-    const u = CP.app.user;
-    let presets = [];
-    try { presets = (await CP.api.appearancePresets()).data; } catch {}
+  /* Profile picture card — upload / remove your avatar. */
+  function buildProfilePic(card) {
     CP.clear(card);
-    card.appendChild(h('h3', { html: `${icon('palette', 16)} Appearance` }));
+    card.appendChild(h('h3', { html: `${icon('image', 16)} Profile Picture` }));
+    card.appendChild(h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '8px 0 2px' } }, 'PNG, JPG, GIF or WebP · up to 3 MB.'));
 
-    // --- Profile picture ---
-    const avatarBox = h('div', { class: 'avatar', style: { width: '54px', height: '54px', fontSize: '20px', backgroundSize: 'cover', backgroundPosition: 'center' } });
+    const avatarBox = h('div', { class: 'avatar', style: { width: '64px', height: '64px', fontSize: '22px' } });
     const renderAvatar = () => {
       const a = CP.app.user.avatar;
-      if (a) { avatarBox.style.backgroundImage = `url("${a}")`; avatarBox.textContent = ''; }
-      else { avatarBox.style.backgroundImage = 'none'; avatarBox.textContent = (u.username[0] || '?').toUpperCase(); }
+      if (a) { avatarBox.style.background = `center/cover no-repeat url("${a}")`; avatarBox.innerHTML = ''; }
+      else { avatarBox.style.background = 'var(--surface-2)'; avatarBox.style.color = 'var(--muted)'; avatarBox.innerHTML = icon('user', 30); }
     };
     renderAvatar();
+
     const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', style: { display: 'none' } });
     fileInput.addEventListener('change', async () => {
       const f = fileInput.files[0]; if (!f) return;
@@ -113,7 +116,8 @@
       } catch (e) { CP.ui.toast(e.message, 'err'); }
       fileInput.value = '';
     });
-    card.appendChild(h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', margin: '14px 0' } },
+
+    card.appendChild(h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', marginTop: '12px' } },
       avatarBox,
       h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
         h('button', { class: 'btn sm', html: `${icon('up', 14)} Upload`, onclick: () => fileInput.click() }),
@@ -122,9 +126,15 @@
           catch (e) { CP.ui.toast(e.message, 'err'); }
         } }),
         fileInput)));
+  }
 
-    // --- Personal theme ---
-    card.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px', margin: '6px 0 8px' } }, 'Personal theme (only you see it)'));
+  async function buildAppearance(card) {
+    let presets = [];
+    try { presets = (await CP.api.appearancePresets()).data; } catch {}
+    CP.clear(card);
+    card.appendChild(h('h3', { html: `${icon('palette', 16)} Appearance` }));
+    card.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px', margin: '8px 0 8px' } }, 'Personal theme (only you see it)'));
+
     const swatchRow = h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } });
     const markActive = () => {
       const cur = CP.app.user.themePreset || '';

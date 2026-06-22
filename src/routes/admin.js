@@ -87,7 +87,12 @@ router.patch('/users/:id', (req, res) => {
   }
   if (status && ['active', 'pending', 'declined'].includes(status)) patch.status = status;
   if (coins !== undefined) patch.coins = Math.max(0, Math.floor(Number(coins) || 0));
-  if (avatar !== undefined) patch.avatar = avatar ? String(avatar).slice(0, 512) : null; // set/clear profile picture
+  if (avatar !== undefined) {
+    // Only accept an uploaded, same-origin avatar path (or clear it). Blocks
+    // remote/script URLs and CSS/HTML-injection via the avatar field.
+    const a = avatar ? String(avatar).slice(0, 512) : '';
+    patch.avatar = /^\/uploads\/avatars\/[\w.-]+$/.test(a) ? a : null;
+  }
   if (resources && typeof resources === 'object') {
     patch.resources = {
       memory: Math.max(0, Math.floor(Number(resources.memory ?? user.resources?.memory) || 0)),

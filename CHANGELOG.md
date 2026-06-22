@@ -4,6 +4,27 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.4] — 2026-06-22
+
+### ✨ Profile pictures
+- The profile picture now has its **own clearly-labeled card** in Account
+  (upload / remove) so it's easy to find.
+- The default (no picture) avatar is now a **clean neutral person icon** on a
+  muted background instead of the initial-letter-on-gradient.
+
+### 🔒 Avatar upload hardening
+- Uploads are validated by **file content (magic bytes)**, not the client-sent
+  filename/extension — only real PNG/JPG/GIF/WebP are stored, and the saved
+  extension is derived from the verified type. SVG (script-capable) is rejected.
+- The stored filename is **fully server-generated** (no part of the client
+  filename is used) → no path-traversal surface; combined with the global
+  `nosniff` header, stored files can't be served as HTML/script.
+- Avatar uploads are **rate-limited** (12/min).
+- The admin "edit user" avatar field now only accepts a **same-origin uploaded
+  path** (or clear), blocking remote/script URLs and CSS/HTML injection.
+- Verified end-to-end on a live instance (real PNG/JPEG accepted; HTML-as-`.png`
+  and SVG rejected; admin remote-URL rejected).
+
 ## [2.4.3] — 2026-06-22
 
 ### 🔒 Security — second-pass audit hardening (R1–R4)

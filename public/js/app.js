@@ -202,7 +202,6 @@
 
     buildShell(appRoot) {
       const u = this.user;
-      const initials = ((u.firstName || u.username || '?')[0] + (u.lastName || '')[0] || (u.username || '?')[0]).toUpperCase();
 
       const navDefs = [{ route: 'dashboard', label: 'Dashboard', icon: 'dashboard', path: '/' }];
       if (this.economyEnabled) navDefs.push({ route: 'shop', label: 'Shop', icon: 'cart', path: '/shop' });
@@ -234,7 +233,7 @@
         h('div', { class: 'side-user', onclick: () => this.go('/account') },
           u.avatar
             ? h('img', { class: 'avatar', src: u.avatar, alt: '', style: { objectFit: 'cover' } })
-            : h('div', { class: 'avatar' }, initials),
+            : h('div', { class: 'avatar', style: { background: 'var(--surface-2)', color: 'var(--muted)' }, html: icon('user', 20) }),
           h('div', { class: 'meta' }, h('b', {}, u.username), h('span', {}, u.email)),
           h('span', { class: 'btn ghost icon', title: 'Sign out', html: icon('logout', 16), onclick: (e) => { e.stopPropagation(); this.logout(); } }))
       );
