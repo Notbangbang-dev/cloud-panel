@@ -4,6 +4,34 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] — 2026-06-23 — "Nebula"
+
+### 🎨 Front-end redesign — "Command Deck"
+A full visual overhaul of the panel UI. **No behaviour, routes, or markup
+structure changed** — every existing class name and the live-theming contract
+were preserved, so all pages and custom admin themes keep working.
+
+- **Real typographic identity.** The UI now ships **Sora** (display/headings),
+  **IBM Plex Sans** (body/UI) and **JetBrains Mono** (data, console, addresses)
+  via Google Fonts with `font-display: swap` — previously the CSS named Inter
+  but fell back to system fonts. Numeric stats now use tabular figures so live
+  values stop jittering as they update.
+- **Deep-space "Command Deck" look.** Layered nebula background that gently
+  breathes, refined glass surfaces (blur + saturation), a single consistent
+  elevation/shadow scale, and a hairline "glass lip" on cards and controls.
+- **Component polish.** Primary buttons get a gradient + hover light-sweep,
+  cards lift with an accent halo, the active nav item has a glowing rail,
+  status pills/resource bars use richer gradients, and the console gains subtle
+  CRT scanlines.
+- **Motion.** Spring-style easing throughout, a staggered page-load reveal, and
+  smoother resource-bar fills.
+
+### ♿ Accessibility
+- **Visible keyboard focus rings** added across buttons, nav, tabs and links
+  (previously focus was only styled on inputs).
+- **`prefers-reduced-motion` is now fully respected** — ambient background
+  drift/aurora, pulses and transitions are disabled when the OS requests it.
+
 ## [2.4.4] — 2026-06-22
 
 ### ✨ Profile pictures
