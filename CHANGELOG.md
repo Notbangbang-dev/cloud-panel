@@ -4,6 +4,35 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] — 2026-06-23 — "Precision"
+
+### 🎨 Full front-end redesign — "Precision"
+A complete redesign of the panel UI to a clean, restrained operations surface
+(Linear / Vercel school). Hairline borders carry the structure, elevation is
+flat, motion is calm, and there's a single quiet accent instead of the old
+tri-colour glow. **No routes, behaviour, or markup structure changed** — every
+class name and the live-theming contract were preserved.
+
+- **New default theme: `Precision`.** Added as a first-class preset (deep
+  near-black surfaces, flat panels, one indigo accent) and set as the default
+  for new installs. **All existing presets remain** — Nebula, Midnight, Aurora,
+  Sunset, Grape, Matrix, Crimson, Slate and Cotton are still selectable, and the
+  theme editor is untouched. *Existing installs keep their saved theme; pick
+  **Precision** in Admin → Appearance to switch.*
+- **New default effects.** Glass/blur is off by default (near-solid surfaces)
+  and the corner radius is tighter (12px) for the sharper, flatter look. Both
+  remain toggles in the appearance editor.
+- **Typography.** Switched to **Geist** (UI + display) and **Geist Mono**
+  (data/console) — a precision grotesk system — replacing the previous
+  Sora/IBM Plex pairing. Numeric stats keep tabular figures.
+- **Components.** Solid buttons (single accent, no gradient), hairline-bordered
+  cards with a quiet hover lift, a clean filled active-nav state, bordered
+  status pills, a flat 1px-grid backdrop, and a calmer console.
+
+### ♿ Accessibility
+- Visible keyboard focus rings retained across buttons, nav, tabs and links.
+- `prefers-reduced-motion` fully respected.
+
 ## [2.5.0] — 2026-06-23 — "Nebula"
 
 ### 🎨 Front-end redesign — "Command Deck"

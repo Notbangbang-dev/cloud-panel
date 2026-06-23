@@ -36,10 +36,10 @@ const SETTINGS_DEFAULTS = {
   // Look & feel — fully admin-customizable theming (see services/appearance.js).
   // NOTE: keep this default in sync with DEFAULT_APPEARANCE in services/appearance.js.
   appearance: {
-    preset: 'nebula',
+    preset: 'precision',
     colors: {}, // optional overrides: { bg, surface, text, primary, secondary, accent }
     background: { type: 'preset', value: '', fit: 'cover', blur: 0, dim: 35, fixed: true },
-    effects: { animations: true, glass: true, radius: 16 },
+    effects: { animations: true, glass: false, radius: 12 },
     brand: { name: '', tagline: '' },
     customCss: '',
   },

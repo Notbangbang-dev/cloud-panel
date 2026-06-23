@@ -19,10 +19,10 @@ const db = require('../db');
  * Defaults
  * ------------------------------------------------------------------------- */
 const DEFAULT_APPEARANCE = {
-  preset: 'nebula',
+  preset: 'precision',
   colors: {},
   background: { type: 'preset', value: '', fit: 'cover', blur: 0, dim: 35, fixed: true },
-  effects: { animations: true, glass: true, radius: 16 },
+  effects: { animations: true, glass: false, radius: 12 },
   brand: { name: '', tagline: '' },
   customCss: '',
 };
@@ -37,6 +37,10 @@ const DEFAULT_APPEARANCE = {
  *  light           — true for light-on-dark inversion hints
  * ------------------------------------------------------------------------- */
 const PRESETS = [
+  {
+    id: 'precision', name: 'Precision', tag: 'Clean, minimal, sharp',
+    p: { bg: '#08090c', bg2: '#0c0e13', surface: '#111319', surf2: '#171a22', text: '#f3f5f9', muted: '#9aa1b3', faint: '#646b7e', primary: '#7c83f6', secondary: '#6366f1', accent: '#818cf8', borderRgb: '140,150,182' },
+  },
   {
     id: 'nebula', name: 'Nebula', tag: 'The Cloud Panel classic',
     p: { bg: '#070a12', bg2: '#0b0f1a', surface: '#121828', surf2: '#1a2136', text: '#e7ecf6', muted: '#8a97b4', faint: '#5c6788', primary: '#22d3ee', secondary: '#6366f1', accent: '#a855f7', borderRgb: '118,140,200' },
@@ -133,7 +137,7 @@ function sanitize(input = {}) {
   const a = input && typeof input === 'object' ? input : {};
   const out = JSON.parse(JSON.stringify(DEFAULT_APPEARANCE));
 
-  out.preset = PRESET_MAP[a.preset] ? a.preset : 'nebula';
+  out.preset = PRESET_MAP[a.preset] ? a.preset : 'precision';
 
   // Color overrides — only keep recognised, valid colors.
   out.colors = {};
@@ -162,8 +166,8 @@ function sanitize(input = {}) {
   const fx = a.effects && typeof a.effects === 'object' ? a.effects : {};
   out.effects = {
     animations: fx.animations === undefined ? true : !!fx.animations,
-    glass: fx.glass === undefined ? true : !!fx.glass,
-    radius: clamp(fx.radius, 0, 28, 16),
+    glass: fx.glass === undefined ? false : !!fx.glass,
+    radius: clamp(fx.radius, 0, 28, 12),
   };
 
   // Brand overrides.
@@ -181,7 +185,7 @@ function sanitize(input = {}) {
  * Resolve the effective palette (preset + valid overrides).
  * ------------------------------------------------------------------------- */
 function resolvePalette(app) {
-  const preset = PRESET_MAP[app.preset] || PRESET_MAP.nebula;
+  const preset = PRESET_MAP[app.preset] || PRESET_MAP.precision;
   const p = { ...preset.p };
   const c = app.colors || {};
   if (isColor(c.bg)) p.bg = c.bg;
