@@ -19,14 +19,21 @@ function rootFor(server) {
 }
 
 // ---- Real disk usage (recursive size), cached with a short TTL ----------
-const _diskCache = new Map(); // serverId -> { at, bytes }
+const _diskCache = new Map();     // serverId -> { at, bytes }
+const _diskComputing = new Set(); // serverIds with an in-flight async walk
 const DISK_TTL = 15000;
 
-function dirSize(dir, budget) {
+// Recursive volume walk that YIELDS to the event loop every few hundred entries.
+// The old version was a synchronous readdirSync/statSync walk that could block the
+// whole process for up to ~1.5s on a cache miss — freezing every console, HTTP
+// request and SFTP session at once. This async version interleaves with other
+// work so a large volume never stalls the panel. Bounded the same way (≤50k
+// entries / ≤1.5s) so a pathological tree can't run forever.
+async function dirSizeAsync(dir, budget) {
   let total = 0;
   let entries;
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = await fsp.readdir(dir, { withFileTypes: true });
   } catch {
     return 0;
   }
@@ -35,25 +42,43 @@ function dirSize(dir, budget) {
     const full = path.join(dir, e.name);
     try {
       if (e.isSymbolicLink()) continue;
-      if (e.isDirectory()) total += dirSize(full, budget);
-      else if (e.isFile()) total += fs.statSync(full).size;
+      if (e.isDirectory()) total += await dirSizeAsync(full, budget);
+      else if (e.isFile()) total += (await fsp.stat(full)).size;
     } catch {
       /* skip unreadable entries */
     }
     budget.count++;
+    if ((budget.count & 511) === 0) await new Promise((r) => setImmediate(r)); // yield
     if (budget.count > 50000 || Date.now() - budget.start > 1500) budget.stop = true;
   }
   return total;
 }
 
-/** Returns real disk usage in bytes for a server's volume (cached). */
+/** Compute (and cache) real disk usage in bytes — off the event loop. Await this
+ *  on quota-critical paths so the quota check sees a fresh value. */
+async function diskUsageAsync(server) {
+  const bytes = await dirSizeAsync(rootFor(server), { count: 0, start: Date.now(), stop: false });
+  _diskCache.set(server.id, { at: Date.now(), bytes });
+  return bytes;
+}
+
+/** Kick off a background refresh (at most one per server in flight). */
+function scheduleDiskRefresh(server) {
+  const id = server.id;
+  if (_diskComputing.has(id)) return;
+  _diskComputing.add(id);
+  diskUsageAsync(server).catch(() => {}).finally(() => _diskComputing.delete(id));
+}
+
+/** Real disk usage in bytes for a server's volume — NON-BLOCKING. Returns the
+ *  last cached value immediately (0 until the first walk finishes) and refreshes
+ *  in the background when stale, so display/stats paths never freeze the loop. */
 function diskUsage(server) {
   const id = server.id;
   const cached = _diskCache.get(id);
   if (cached && Date.now() - cached.at < DISK_TTL) return cached.bytes;
-  const bytes = dirSize(rootFor(server), { count: 0, start: Date.now(), stop: false });
-  _diskCache.set(id, { at: Date.now(), bytes });
-  return bytes;
+  scheduleDiskRefresh(server);
+  return cached ? cached.bytes : 0;
 }
 
 /** Drop the cached usage (call after writes so quota checks stay accurate). */
@@ -164,6 +189,7 @@ async function read(server, rel) {
 
 async function write(server, rel, content) {
   const abs = resolve(server, rel);
+  await diskUsageAsync(server); // refresh the quota baseline off the event loop
   assertQuota(server, Buffer.byteLength(content ?? '', 'utf8'));
   await fsp.mkdir(path.dirname(abs), { recursive: true });
   await fsp.writeFile(abs, content ?? '', 'utf8');
@@ -197,7 +223,11 @@ async function remove(server, rel) {
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // 2 GB per file
 
 /** Stream an upload (request body) to a file, safely, with a size cap. */
-function saveStream(server, rel, readable, { maxBytes = MAX_UPLOAD } = {}) {
+async function saveStream(server, rel, readable, { maxBytes = MAX_UPLOAD } = {}) {
+  // Refresh the quota baseline before sizing the cap. Pause first so no body
+  // chunks are dropped during the (brief, off-loop) walk; pipe() resumes flow.
+  try { readable.pause && readable.pause(); } catch {}
+  await diskUsageAsync(server).catch(() => {});
   return new Promise((res, rej) => {
     let abs;
     try { abs = resolve(server, rel); } catch (e) { return rej(e); }
@@ -239,6 +269,7 @@ async function unzip(server, rel) {
 
   const baseRel = toRel(server, path.dirname(abs));
   const zip = new AdmZip(abs);
+  await diskUsageAsync(server); // refresh the quota baseline off the event loop
   const budget = Math.min(remainingBytes(server), MAX_EXTRACT_BYTES); // quota + anti zip-bomb
   let count = 0;
   let written = 0;
@@ -289,4 +320,4 @@ function guessMime(name) {
   return map[ext] || 'application/octet-stream';
 }
 
-module.exports = { rootFor, resolve, toRel, list, read, write, mkdir, rename, remove, diskUsage, saveStream, unzip, limitBytes, remainingBytes, assertQuota, invalidateDisk };
+module.exports = { rootFor, resolve, toRel, list, read, write, mkdir, rename, remove, diskUsage, diskUsageAsync, saveStream, unzip, limitBytes, remainingBytes, assertQuota, invalidateDisk };

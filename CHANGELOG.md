@@ -4,6 +4,45 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.16.0] — 2026-06-24 — "Ballast"
+
+Fixes the concrete issues a fresh independent review found — including one that
+proved my own "CI is green" claim was overstated. No spin: these are real
+reliability + honesty fixes.
+
+### 🧪 The test suite is now genuinely isolated (CI was flaky)
+- **Each test process gets its own data directory.** The reviewer found the suite
+  could share one SQLite `settings` singleton across parallel `node --test`
+  workers, so the billing tests raced (`mode: free` vs `mode: trial`) and CI
+  failed ~40% of the time on Linux even though it passed locally. `tests/_env.js`
+  now allocates a fresh per-process dir unconditionally — the race is now
+  structurally impossible. (Node-18-safe; no runner-flag changes.)
+
+### 💾 Restore can no longer half-overwrite a volume
+- **`backups.restore` now validates the entire archive before writing a byte.** It
+  used to check the disk quota *mid-loop*, so a backup that exceeded quota would
+  leave the volume partially overwritten with no rollback. Now it resolves every
+  entry (zip-slip safe), sums declared sizes, and rejects up front — a failed
+  restore leaves your files exactly as they were. (Regression test added.)
+
+### ⚙️ Disk-usage walk no longer freezes the panel
+- **Volume size is now measured off the event loop.** `files.diskUsage` was a
+  synchronous recursive walk that could block the whole process for up to ~1.5s
+  on a cache miss — freezing every console, API call and SFTP session (the exact
+  bug class the v2.14 backup change fixed, still lurking here). The walk is now
+  async and yields; the sync accessor is non-blocking (serves cached, refreshes
+  in the background). Quota-critical paths (write/upload/unzip/restore) await an
+  accurate refresh so limits stay correct.
+
+### 📣 Marketing site now matches the README's single-node honesty
+- Removed "scaling across nodes" / "manage multiple nodes" / "multi-node admin
+  area" from the website — Cloud Panel is **single-node** and now says so
+  everywhere, not just in the README.
+
+### ✅ Tests
+- 23 tests (added atomic-restore + async-disk-usage regression tests); CI green on
+  Node 18/20/22.
+
 ## [2.15.0] — 2026-06-24 — "Keystone"
 
 Closes the loop on the #1 review criticism: the strong sandbox is no longer

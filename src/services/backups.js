@@ -98,25 +98,51 @@ async function restore(server, backupId) {
   const src = backupFile(server.id, backupId);
   if (!fs.existsSync(src)) throw new Error('Backup file is missing on disk');
   const zip = new AdmZip(src);
+
+  // Refresh the quota baseline accurately (off the event loop), then size budget.
+  await files.diskUsageAsync(server);
   const budget = Math.min(files.remainingBytes(server), 8 * 1024 * 1024 * 1024); // quota + anti zip-bomb
-  let restored = 0;
-  let written = 0;
+
+  // ---- Pass 1: VALIDATE the whole archive before touching the live volume ----
+  // Resolve every target (zip-slip safe), bound the file count, and reject up
+  // front if the DECLARED uncompressed total exceeds the budget. This is the fix
+  // for the half-overwrite bug: previously the quota check ran mid-write, so a
+  // backup that exceeded quota would leave the volume partially overwritten with
+  // no rollback. Now a quota failure aborts before a single byte is written.
+  const plan = [];
+  let declaredTotal = 0;
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory) continue;
     let target;
-    try { target = files.resolve(server, '/' + entry.entryName); } catch { continue; } // zip-slip safe
-    // Anti zip-bomb: bound by the DECLARED size before getData() inflates the entry.
-    const declared = (entry.header && entry.header.size) || 0;
-    if (written + declared > budget) { files.invalidateDisk(server.id); throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }
-    const data = entry.getData();
-    written += data.length;
-    if (written > budget) { files.invalidateDisk(server.id); throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }
-    await fsp.mkdir(path.dirname(target), { recursive: true });
-    await fsp.writeFile(target, data);
-    isolation.chown(target);
-    restored++;
+    try { target = files.resolve(server, '/' + entry.entryName); } catch { continue; } // skip zip-slip entries
+    declaredTotal += (entry.header && entry.header.size) || 0;
+    if (declaredTotal > budget) {
+      throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' });
+    }
+    if (plan.length >= 20000) throw new Error('Backup contains too many files');
+    plan.push({ entry, target });
   }
-  files.invalidateDisk(server.id);
+
+  // ---- Pass 2: write the validated set --------------------------------------
+  let restored = 0;
+  let written = 0;
+  try {
+    for (const { entry, target } of plan) {
+      const data = entry.getData();
+      written += data.length;
+      // Defensive: the archive header could under-report sizes (a crafted zip).
+      // Still bound the actual inflated total so a lying backup can't blow quota.
+      if (written > budget) {
+        throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' });
+      }
+      await fsp.mkdir(path.dirname(target), { recursive: true });
+      await fsp.writeFile(target, data);
+      isolation.chown(target);
+      restored++;
+    }
+  } finally {
+    files.invalidateDisk(server.id);
+  }
   return { restored };
 }
 
