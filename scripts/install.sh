@@ -192,15 +192,20 @@ EOF
       echo "CP_OCI_RUNTIME=${OCI_RUNTIME}"
     } >> "$APP_DIR/.env"
   else
-    # No sandbox requested. The panel is secure-by-default and will REFUSE to run
-    # servers unless the operator accepts the risk, so this single-operator
-    # install opts in explicitly (servers run as the panel user — audit C1).
-    # For untrusted/multi-user use, re-run with CP_OCI=1 instead.
+    # Secure by default: do NOT silently opt out of the sandbox. We leave the
+    # panel in its refuse-to-run-servers-unsandboxed state and make the operator
+    # consciously choose. (Earlier versions auto-wrote CP_ALLOW_UNSANDBOXED=1
+    # here, which quietly negated "secure by default" — fixed.)
     {
-      echo "# No sandbox: servers run as the panel user (trusted, single-operator only — C1)."
-      echo "# For untrusted/multi-user hosting, set CP_OCI=1 (Docker/Podman) and remove this."
-      echo "CP_ALLOW_UNSANDBOXED=1"
+      echo "# Server sandbox is NOT configured yet. The panel will REFUSE to start"
+      echo "# servers until you choose ONE of these:"
+      echo "#   - RECOMMENDED (any untrusted / multi-user panel): install Docker or"
+      echo "#     Podman, then set  CP_OCI=1  (and CP_OCI_RUNTIME=docker|podman)."
+      echo "#   - TRUSTED single-operator panel ONLY: uncomment the next line to run"
+      echo "#     servers as the panel user (audit C1 — never with untrusted users)."
+      echo "# CP_ALLOW_UNSANDBOXED=1"
     } >> "$APP_DIR/.env"
+    SANDBOX_UNSET=1
   fi
   chown "$RUN_USER":"$RUN_USER" "$APP_DIR/.env"
   chmod 600 "$APP_DIR/.env"
@@ -283,6 +288,10 @@ echo -e "  ${c_grn}Web panel${c_off}   : http://${PUBLIC_HOST}:${WEB_PORT}"
 echo -e "  ${c_grn}SFTP${c_off}        : ${PUBLIC_HOST}:${SFTP_PORT}  (user: <name>.<serverId>)"
 if [ "$OCI_ENABLE" = "1" ]; then
   echo -e "  ${c_grn}Sandbox${c_off}     : OCI containers via ${OCI_RUNTIME} (CP_OCI=1)"
+elif [ "${SANDBOX_UNSET:-0}" = "1" ]; then
+  echo -e "  ${c_ylw}Sandbox${c_off}     : NOT configured — servers will REFUSE to start until you choose."
+  echo -e "                Edit ${APP_DIR}/.env and either set ${c_grn}CP_OCI=1${c_off} (recommended) or, for a"
+  echo -e "                trusted single-operator panel, uncomment ${c_ylw}CP_ALLOW_UNSANDBOXED=1${c_off}. See SECURITY.md."
 fi
 echo
 if [ "$ADMIN_CREATED" = "1" ]; then

@@ -181,7 +181,7 @@ async function runOne(schedule) {
       await pm.power(server, schedule.value);
     } else if (schedule.action === 'backup') {
       const backups = require('./backups'); // lazy require to avoid load-order cost
-      backups.create(server, { name: schedule.value || 'Scheduled backup', createdBy: null });
+      await backups.create(server, { name: schedule.value || 'Scheduled backup', createdBy: null });
     }
     db.update(COLL, schedule.id, { fireCount: (schedule.fireCount || 0) + 1, lastRunAt: new Date().toISOString() });
     db.log({ type: 'schedule', serverId: server.id, message: `Schedule '${schedule.name}' ran → ${schedule.action}${schedule.action === 'command' ? ': ' + schedule.value : schedule.action === 'power' ? ': ' + schedule.value : ''}` });

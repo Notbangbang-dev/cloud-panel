@@ -4,6 +4,39 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.14.0] — 2026-06-24 — "Bedrock"
+
+Directly addresses the heaviest-weighted gaps from the latest honest review.
+
+### 🔐 Secure-by-default actually means it now
+- **The VPS installer no longer auto-opts-out of the sandbox.** It used to write
+  `CP_ALLOW_UNSANDBOXED=1` for a plain install — silently negating "secure by
+  default." Now it leaves the sandbox **unconfigured** (the panel refuses to run
+  servers) and prints an explicit choice: enable `CP_OCI=1` (recommended) or, for
+  a trusted single-operator panel, consciously uncomment `CP_ALLOW_UNSANDBOXED=1`.
+
+### ⚙️ No more event-loop-blocking backups
+- **Backup creation now runs in a worker thread.** A multi-GB backup used to zip
+  synchronously on the main thread, freezing every console, API call and SFTP
+  session for its whole duration. It's now off-thread — the panel stays
+  responsive while backups run. (Read errors still fail the backup loudly; an
+  empty/absent volume is still fine.)
+
+### 💾 Updates are recoverable
+- **`cloud-panel-update` now snapshots the panel's own state** (the SQLite DB /
+  JSON store) into `data/state-backups/<timestamp>/` *before* it restarts &
+  migrates — keeping the 7 most recent. A bad update or migration can now be
+  rolled back instead of being unrecoverable.
+
+### ✅ Tests
+- 21 tests (added a worker-thread backup test); CI green on Node 18/20/22.
+
+> Still deliberately NOT shipped (they need Linux+root real-world verification or
+> are multi-week — and faking them would be dishonest): per-tenant isolation +
+> host-mode cgroup limits, and the real multi-node daemon. For untrusted/multi-
+> user use, run with `CP_OCI=1` (the OCI sandbox already provides per-server
+> isolation and resource caps).
+
 ## [2.13.0] — 2026-06-24 — "Insight"
 
 ### 📊 Observability

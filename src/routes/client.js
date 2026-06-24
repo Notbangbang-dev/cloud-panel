@@ -556,7 +556,7 @@ router.get('/servers/:id/backups', loadServer, requirePerm('backup'), (req, res)
   res.json({ data: backups.list(req.server.id).map(serializeBackup) });
 });
 
-router.post('/servers/:id/backups', loadServer, requirePerm('backup'), activeRequired, (req, res) => {
+router.post('/servers/:id/backups', loadServer, requirePerm('backup'), activeRequired, async (req, res) => {
   // Each server can hold up to its featureLimits.backups (allocated from the
   // owner's quota in Settings → Resources).
   const cap = (req.server.featureLimits && req.server.featureLimits.backups) || 0;
@@ -564,7 +564,7 @@ router.post('/servers/:id/backups', loadServer, requirePerm('backup'), activeReq
   if (have >= cap)
     return res.status(403).json({ error: `Backup limit reached for this server (${cap}). Raise it in Settings → Resources, or buy more backup slots in the shop.` });
   let rec;
-  try { rec = backups.create(req.server, { name: (req.body || {}).name, createdBy: req.user.id }); }
+  try { rec = await backups.create(req.server, { name: (req.body || {}).name, createdBy: req.user.id }); }
   catch (err) { return res.status(500).json({ error: err.message }); }
   db.log({ type: 'backup', userId: req.user.id, serverId: req.server.id, message: `Backup '${rec.name}' created` });
   try { achievements.bump(db.get('users', req.user.id), 'backupsCreated'); } catch {}

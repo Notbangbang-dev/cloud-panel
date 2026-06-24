@@ -5,6 +5,7 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
+const { Worker } = require('worker_threads');
 const config = require('../config');
 const db = require('../db');
 const files = require('./files');
@@ -35,22 +36,51 @@ function get(serverId, backupId) {
   return b && b.serverId === serverId ? b : null;
 }
 
-function create(server, { name, createdBy } = {}) {
-  const AdmZip = loadZip();
+// Zip the volume in a WORKER THREAD so a multi-GB backup never blocks the panel's
+// single event loop — consoles, HTTP and SFTP keep responding while it runs.
+// Only an absent/empty volume is acceptable; a real read error fails the backup
+// loudly rather than silently writing an empty zip the user would trust.
+function zipFolderInWorker(root, dest) {
+  return new Promise((resolve, reject) => {
+    const code = `
+      const { parentPort, workerData } = require('worker_threads');
+      const fs = require('fs');
+      (function () {
+        let AdmZip;
+        try { AdmZip = require('adm-zip'); } catch { return parentPort.postMessage({ ok:false, error:'adm-zip not installed' }); }
+        try {
+          const zip = new AdmZip();
+          if (fs.existsSync(workerData.root)) {
+            try { zip.addLocalFolder(workerData.root); }
+            catch (e) { return parentPort.postMessage({ ok:false, error:'read:' + e.message }); }
+          }
+          zip.writeZip(workerData.dest);
+          let size = 0; try { size = fs.statSync(workerData.dest).size; } catch {}
+          parentPort.postMessage({ ok:true, size });
+        } catch (e) { parentPort.postMessage({ ok:false, error:e.message }); }
+      })();
+    `;
+    const w = new Worker(code, { eval: true, workerData: { root, dest } });
+    let settled = false;
+    const done = (fn, v) => { if (!settled) { settled = true; w.terminate(); fn(v); } };
+    w.on('message', (m) => {
+      if (m.ok) return done(resolve, m.size);
+      const msg = (m.error || '').startsWith('read:')
+        ? 'Backup failed while reading server files: ' + m.error.slice(5)
+        : (m.error || 'Backup failed');
+      done(reject, new Error(msg));
+    });
+    w.on('error', (e) => done(reject, e));
+    w.on('exit', (c) => { if (!settled) done(reject, new Error('Backup worker exited unexpectedly (' + c + ')')); });
+  });
+}
+
+async function create(server, { name, createdBy } = {}) {
+  loadZip(); // surface a clear error if adm-zip is missing before spawning the worker
   const root = files.rootFor(server);
   const id = db.uid('bak');
   const dest = backupFile(server.id, id);
-  const zip = new AdmZip();
-  // Only an absent/empty volume is acceptable. A real read/permission error must
-  // FAIL the backup loudly — silently writing an empty zip the user trusts as a
-  // real snapshot is worse than no backup at all.
-  if (fs.existsSync(root)) {
-    try { zip.addLocalFolder(root); }
-    catch (e) { throw new Error('Backup failed while reading server files: ' + e.message); }
-  }
-  zip.writeZip(dest);
-  let sizeBytes = 0;
-  try { sizeBytes = fs.statSync(dest).size; } catch {}
+  const sizeBytes = await zipFolderInWorker(root, dest);
   return db.insert('backups', {
     id,
     serverId: server.id,

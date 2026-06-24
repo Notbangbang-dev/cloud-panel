@@ -36,6 +36,23 @@ resolve_repo() {
   if [ -s "$APP_DIR/.repo-url" ]; then cat "$APP_DIR/.repo-url"; return; fi
   echo "$DEFAULT_REPO"
 }
+# Snapshot the panel's own state (DB / JSON store) BEFORE applying an update, so a
+# bad migration or update is recoverable. Keeps the 7 most recent snapshots.
+# (Game-server volumes are backed up separately; this protects users/servers/billing.)
+snapshot_state() {
+  local ts snap
+  ts="$(date +%Y%m%d-%H%M%S)"
+  snap="$APP_DIR/data/state-backups/$ts"
+  mkdir -p "$snap" || return 0
+  ( shopt -s nullglob
+    for f in "$APP_DIR"/data/*.db "$APP_DIR"/data/*.db-wal "$APP_DIR"/data/*.db-shm "$APP_DIR"/data/*.json; do
+      cp -p "$f" "$snap/" 2>/dev/null || true
+    done )
+  chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR/data/state-backups" 2>/dev/null || true
+  # prune to the 7 newest snapshots
+  ls -1dt "$APP_DIR"/data/state-backups/*/ 2>/dev/null | tail -n +8 | xargs -r rm -rf || true
+  ok "State snapshot saved → data/state-backups/$ts (restore point before this update)"
+}
 
 # ---- Stage 2: deploy from a freshly-downloaded copy (runs OUTSIDE $APP_DIR
 #      so we never overwrite this script while it's executing) ----
@@ -53,6 +70,7 @@ if [ "${CP_UPD_STAGE:-1}" = "2" ]; then
   say "Running tests before restart …"
   sudo -u "$RUN_USER" bash -lc "cd '$APP_DIR' && npm test" \
     || die "Update aborted: tests FAILED — the panel was NOT restarted (still running the previous version). Investigate before retrying."
+  snapshot_state
   ensure_link
   systemctl restart "$SERVICE"
   rm -rf "$(dirname "$SRC")" 2>/dev/null || true
@@ -73,6 +91,7 @@ if [ -d "$APP_DIR/.git" ]; then
   say "Running tests before restart …"
   sudo -u "$RUN_USER" bash -lc "cd '$APP_DIR' && npm test" \
     || die "Update aborted: tests FAILED — the panel was NOT restarted (still running the previous version). Investigate before retrying."
+  snapshot_state
   ensure_link
   systemctl restart "$SERVICE"
   ok "Cloud Panel updated and restarted."
