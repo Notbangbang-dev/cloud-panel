@@ -1299,7 +1299,9 @@
     saveBtn.onclick = async () => {
       try {
         await CP.api.adminSaveAppearance(draft);
-        CP.appearance.reloadGlobal(); dropPreview();
+        // Drop the live preview only once the saved global theme has loaded —
+        // double-buffered reload, so there's no flash back to the base theme.
+        CP.appearance.reloadGlobal(dropPreview);
         if (draft.brand.name) CP.app.brand.name = draft.brand.name;
         CP.ui.toast('Theme saved — live for everyone', 'ok');
       } catch (e) { CP.ui.toast(e.message, 'err'); }
@@ -1307,8 +1309,8 @@
     const revertBtn = h('button', { class: 'btn ghost', html: `${icon('back', 14)} Discard`, onclick: () => { removeAppearancePreview(); appearanceTab(CP.clear(root)); } });
     const resetBtn = h('button', { class: 'btn ghost', html: `${icon('refresh', 14)} Reset to default` });
     resetBtn.onclick = async () => {
-      if (!(await CP.ui.confirm({ title: 'Reset theme', message: 'Restore the default Nebula theme and clear all customizations?', confirmText: 'Reset' }))) return;
-      try { await CP.api.adminResetAppearance(); CP.appearance.reloadGlobal(); dropPreview(); CP.ui.toast('Theme reset', 'ok'); appearanceTab(CP.clear(root)); }
+      if (!(await CP.ui.confirm({ title: 'Reset theme', message: 'Restore the default Editorial theme and clear all customizations?', confirmText: 'Reset' }))) return;
+      try { await CP.api.adminResetAppearance(); CP.appearance.reloadGlobal(dropPreview); CP.ui.toast('Theme reset', 'ok'); appearanceTab(CP.clear(root)); }
       catch (e) { CP.ui.toast(e.message, 'err'); }
     };
 

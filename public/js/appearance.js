@@ -95,10 +95,31 @@
     frame();
   };
 
-  /* Cache-bust the global stylesheet so a freshly-saved theme shows at once. */
-  A.reloadGlobal = function () {
-    const link = document.getElementById('cp-appearance');
-    if (link) link.setAttribute('href', '/api/appearance.css?v=' + Date.now());
+  /* Reload the global theme stylesheet after a save — double-buffered so there
+     is NO flash of the un-themed base CSS. We load a fresh <link> first and only
+     swap it in (removing the old one) once it has finished loading; the optional
+     onLoaded callback fires at that point (used to drop the live-preview style
+     exactly when the saved theme is ready, so the transition is seamless). */
+  A.reloadGlobal = function (onLoaded) {
+    const old = document.getElementById('cp-appearance');
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/api/appearance.css?v=' + Date.now();
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      link.id = 'cp-appearance';
+      if (old && old !== link && old.parentNode) old.remove();
+      if (typeof onLoaded === 'function') { try { onLoaded(); } catch (e) {} }
+    };
+    link.addEventListener('load', finish);
+    link.addEventListener('error', finish);
+    // Insert right after the old link so cascade order is preserved; the old
+    // stylesheet (and any live preview after it) stays applied until load.
+    if (old && old.parentNode) old.parentNode.insertBefore(link, old.nextSibling);
+    else document.head.appendChild(link);
+    // Safety net: if load/error never fires, promote anyway.
+    setTimeout(finish, 3000);
   };
 
   /* ---- Admin live preview ---- */

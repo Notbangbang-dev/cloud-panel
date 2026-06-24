@@ -4,6 +4,19 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.7.1] — 2026-06-23
+
+### 🐛 Fixes
+- **Saving a theme no longer flashes back to the base theme.** Clicking *Save*
+  (or *Reset*) in Admin → Appearance briefly swapped the global stylesheet's
+  `href`, which made the browser drop the current theme while the new one
+  downloaded — so the panel snapped to the un-themed base CSS for a moment and
+  looked like the save had reverted. The reload is now **double-buffered**: a
+  fresh stylesheet is loaded in the background and only swapped in once ready,
+  and the live preview is held until then — a seamless transition with no flash.
+- Fixed a stale "Nebula" reference in the *Reset theme* dialog (the default is
+  now Editorial).
+
 ## [2.7.0] — 2026-06-23 — "Editorial"
 
 ### 🎨 Editorial look + new default theme
