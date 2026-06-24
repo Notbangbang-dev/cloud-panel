@@ -4,6 +4,36 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.15.0] — 2026-06-24 — "Keystone"
+
+Closes the loop on the #1 review criticism: the strong sandbox is no longer
+opt-in — a fresh install is **isolated by default**.
+
+### 🔐 The container sandbox is now the default
+- **`CP_OCI` now defaults to `auto`.** A plain `sudo bash scripts/install.sh`
+  detects an existing Docker/Podman — or installs Docker — and runs **every
+  server in its own OCI container by default**: filesystem/PID/network isolation,
+  `--cap-drop=ALL`, `no-new-privileges`, **and hard CPU/RAM/PID caps** from each
+  server's plan. v2.14 made the panel *refuse* to run servers without a sandbox;
+  v2.15 actually *sets one up for you*.
+- **Never silently unsandboxed.** If no container engine can be installed, the
+  installer does **not** fall back to bare host processes — it leaves the panel in
+  its refuse-to-run state and tells you exactly what to do.
+- **Explicit escape hatches preserved.** `CP_OCI=1` forces containers (install if
+  needed); `CP_OCI=0` (or `host`) selects host-process mode, where you still
+  consciously choose `CP_SERVER_UID/GID` isolation or `CP_ALLOW_UNSANDBOXED=1`.
+- This also closes the **"no resource limits in host mode"** gap for the default
+  path: OCI enforces real `--memory` / `--cpus` / `--pids-limit` per server.
+
+### ✅ Tests
+- 21 tests; CI green on Node 18/20/22. Installer mode-resolution
+  (`auto`/force/host) verified.
+
+> Still deliberately NOT shipped (multi-week, or need real Linux+root hardware to
+> verify honestly): per-server-user isolation as a *host-mode* default, and the
+> real multi-node daemon. The honest path for multi-user hosting is the new
+> default — OCI containers.
+
 ## [2.14.0] — 2026-06-24 — "Bedrock"
 
 Directly addresses the heaviest-weighted gaps from the latest honest review.

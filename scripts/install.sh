@@ -11,8 +11,15 @@
 # Environment overrides:
 #     CP_WEB_PORT (8080)  CP_SFTP_PORT (5657)  CP_SKIP_JAVA (0)
 #     CP_APP_DIR (/opt/cloud-panel)  CP_SERVICE (cloud-panel)  CP_USER (cloudpanel)
-#     CP_OCI (0)          set to 1 to install Docker and sandbox servers in
-#                         OCI containers (strongest isolation; see SECURITY.md)
+#     CP_OCI (auto)       server sandbox mode (secure by default):
+#                           auto = use an existing Docker/Podman, or install
+#                                  Docker, and run every server in its own OCI
+#                                  container (strongest isolation; RECOMMENDED).
+#                                  Falls back to "refuse to run" if no engine can
+#                                  be set up — never silently unsandboxed.
+#                           1    = force the container sandbox (install if needed).
+#                           0    = host-process mode; you must then pick a sandbox
+#                                  (CP_SERVER_UID/GID) or consciously opt out.
 #     CP_OCI_RUNTIME (docker)   container engine: docker | podman
 #
 set -euo pipefail
@@ -25,8 +32,20 @@ SFTP_PORT="${CP_SFTP_PORT:-5657}"
 ALLOC_START="${CP_ALLOC_START:-25565}"
 ALLOC_END="${CP_ALLOC_END:-25600}"
 NODE_MAJOR="${CP_NODE_MAJOR:-20}"
-OCI_ENABLE="${CP_OCI:-0}"
+
+# Server sandbox mode. Secure by default: when CP_OCI is unset we AUTO-enable the
+# OCI container sandbox (using an existing engine, or installing Docker). Explicit
+# 1 forces it; explicit 0/host selects host-process mode. OCI_ENABLE (0/1) is the
+# resolved decision computed in section 4b.
+OCI_MODE_RAW="${CP_OCI:-auto}"
+case "$(printf '%s' "$OCI_MODE_RAW" | tr 'A-Z' 'a-z')" in
+  1|true|yes|on)       OCI_MODE=force ;;
+  0|false|no|off|host) OCI_MODE=host ;;
+  *)                   OCI_MODE=auto ;;
+esac
+OCI_RUNTIME_SET=0; [ -n "${CP_OCI_RUNTIME:-}" ] && OCI_RUNTIME_SET=1
 OCI_RUNTIME="${CP_OCI_RUNTIME:-docker}"
+OCI_ENABLE=0
 
 c_blue='\033[1;36m'; c_grn='\033[1;32m'; c_ylw='\033[1;33m'; c_red='\033[1;31m'; c_off='\033[0m'
 say()  { echo -e "${c_blue}::${c_off} $*"; }
@@ -95,28 +114,71 @@ if ! id "$RUN_USER" >/dev/null 2>&1; then
 fi
 ok "Service user '${RUN_USER}' ready."
 
-# ---- 4b. Container engine (optional OCI sandbox) -------------------------
-if [ "$OCI_ENABLE" = "1" ]; then
-  if [ "$OCI_RUNTIME" = "podman" ]; then
+# ---- 4b. Container engine (OCI sandbox — on by default) ------------------
+# Set up ONE container engine. Installs it if missing; for Docker it also enables
+# the service and grants the panel user access. Returns 0 if the engine ends up
+# usable on PATH, non-zero otherwise (caller decides whether to fall back).
+ensure_runtime() {
+  local rt="$1"
+  if [ "$rt" = "podman" ]; then
     if ! command -v podman >/dev/null 2>&1; then
       say "Installing Podman (OCI sandbox)…"
-      apt-get install -y -q podman >/dev/null 2>&1 || warn "Could not install Podman automatically — install it, then set CP_OCI=1."
+      apt-get install -y -q podman >/dev/null 2>&1 || warn "Could not install Podman automatically."
     fi
-    command -v podman >/dev/null 2>&1 && ok "Podman $(podman --version 2>/dev/null | awk '{print $3}')"
-    warn "Rootless Podman needs NoNewPrivileges=false in the service unit — see SECURITY.md."
-  else
-    if ! command -v docker >/dev/null 2>&1; then
-      say "Installing Docker engine (OCI sandbox)…"
-      curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || warn "Docker install script failed — install Docker manually, then set CP_OCI=1."
+    if command -v podman >/dev/null 2>&1; then
+      ok "Podman $(podman --version 2>/dev/null | awk '{print $3}')"
+      warn "Rootless Podman needs NoNewPrivileges=false in the service unit — see SECURITY.md."
+      return 0
     fi
-    if command -v docker >/dev/null 2>&1; then
-      systemctl enable --now docker >/dev/null 2>&1 || true
-      usermod -aG docker "$RUN_USER" 2>/dev/null || true
-      ok "Docker $(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',') — '${RUN_USER}' added to the docker group."
-      warn "Membership in the 'docker' group is root-equivalent; keep this host trusted (see SECURITY.md)."
-    fi
+    return 1
   fi
-fi
+  # Docker (default)
+  if ! command -v docker >/dev/null 2>&1; then
+    say "Installing Docker engine (OCI sandbox)…"
+    curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || warn "Docker install script failed."
+  fi
+  if command -v docker >/dev/null 2>&1; then
+    systemctl enable --now docker >/dev/null 2>&1 || true
+    usermod -aG docker "$RUN_USER" 2>/dev/null || true
+    ok "Docker $(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',') — '${RUN_USER}' added to the docker group."
+    warn "Membership in the 'docker' group is root-equivalent; keep this host trusted (see SECURITY.md)."
+    return 0
+  fi
+  return 1
+}
+
+case "$OCI_MODE" in
+  force)
+    # Operator explicitly required containers — set up the engine and turn the
+    # sandbox ON regardless. If the engine ends up missing the panel refuses to
+    # start servers at runtime (loud-on-misconfig) rather than running them bare.
+    ensure_runtime "$OCI_RUNTIME" || warn "Container engine not available yet — the panel will refuse to start servers until it is. Re-run after installing, or unset CP_OCI."
+    OCI_ENABLE=1
+    ;;
+  auto)
+    # Secure-by-default: prefer an engine that's already installed; otherwise
+    # install Docker. Respect an explicitly chosen CP_OCI_RUNTIME.
+    if [ "$OCI_RUNTIME_SET" != "1" ]; then
+      if command -v docker >/dev/null 2>&1; then OCI_RUNTIME=docker
+      elif command -v podman >/dev/null 2>&1; then OCI_RUNTIME=podman
+      else OCI_RUNTIME=docker; fi
+    fi
+    say "Setting up the container sandbox (${OCI_RUNTIME}) — servers will be isolated by default."
+    if ensure_runtime "$OCI_RUNTIME"; then
+      OCI_ENABLE=1
+    else
+      # Could not set up an engine. Do NOT fall back to running unsandboxed —
+      # leave the panel in its refuse-to-run state and tell the operator.
+      OCI_ENABLE=0
+      AUTO_OCI_FAILED=1
+      warn "Could not set up a container engine automatically. The panel will REFUSE to start servers until you install Docker/Podman and set CP_OCI=1 (or, for a trusted single-operator panel, set CP_ALLOW_UNSANDBOXED=1)."
+    fi
+    ;;
+  host)
+    say "CP_OCI=0 — host-process mode chosen explicitly; not installing a container engine."
+    OCI_ENABLE=0
+    ;;
+esac
 
 # ---- 5. Application files -------------------------------------------------
 if [ ! -f "$SOURCE_DIR/package.json" ]; then
@@ -287,9 +349,13 @@ echo
 echo -e "  ${c_grn}Web panel${c_off}   : http://${PUBLIC_HOST}:${WEB_PORT}"
 echo -e "  ${c_grn}SFTP${c_off}        : ${PUBLIC_HOST}:${SFTP_PORT}  (user: <name>.<serverId>)"
 if [ "$OCI_ENABLE" = "1" ]; then
-  echo -e "  ${c_grn}Sandbox${c_off}     : OCI containers via ${OCI_RUNTIME} (CP_OCI=1)"
+  echo -e "  ${c_grn}Sandbox${c_off}     : OCI containers via ${OCI_RUNTIME} — each server isolated, with CPU/RAM caps (CP_OCI=1)"
+elif [ "${AUTO_OCI_FAILED:-0}" = "1" ]; then
+  echo -e "  ${c_ylw}Sandbox${c_off}     : tried to set up containers but no engine is available — servers will REFUSE to start."
+  echo -e "                Install Docker or Podman, then set ${c_grn}CP_OCI=1${c_off} in ${APP_DIR}/.env. For a trusted"
+  echo -e "                single-operator panel only, uncomment ${c_ylw}CP_ALLOW_UNSANDBOXED=1${c_off}. See SECURITY.md."
 elif [ "${SANDBOX_UNSET:-0}" = "1" ]; then
-  echo -e "  ${c_ylw}Sandbox${c_off}     : NOT configured — servers will REFUSE to start until you choose."
+  echo -e "  ${c_ylw}Sandbox${c_off}     : host-process mode — servers will REFUSE to start until you choose."
   echo -e "                Edit ${APP_DIR}/.env and either set ${c_grn}CP_OCI=1${c_off} (recommended) or, for a"
   echo -e "                trusted single-operator panel, uncomment ${c_ylw}CP_ALLOW_UNSANDBOXED=1${c_off}. See SECURITY.md."
 fi
