@@ -44,7 +44,27 @@ const list = (serverId) =>
 const get = (id) => db.get(COLL, id);
 
 /* ---- validation ---------------------------------------------------------- */
-function validRegex(src) { try { new RegExp(src); return true; } catch { return false; } }
+// Reject patterns prone to catastrophic backtracking (ReDoS). A user-supplied
+// regex is run synchronously against console lines / the test endpoint, so an
+// "evil regex" like (a+)+$ would freeze the single-process panel for everyone —
+// the 2000-char input cap does NOT help (the cost is exponential, not linear).
+// This heuristic blocks a quantifier applied to a group that itself contains an
+// unbounded quantifier (the classic nested-quantifier blowup), plus a couple of
+// known-bad shapes. It can't catch every pathological regex, but it stops the
+// exploitable classes; full safety would need an RE2/worker-timeout engine.
+function isDangerousRegex(src) {
+  const s = String(src);
+  // The exploitable class here is a quantified group whose body ALSO contains an
+  // unbounded quantifier — the classic nested-quantifier blowup, e.g. (a+)+ ,
+  // (a*)*c , (.*)*x . That is what hangs the engine; we reject those shapes.
+  if (/\([^)]*[+*][^)]*\)\s*[*+]/.test(s)) return true;       // (...+...)+  / (...*...)*
+  if (/\([^)]*[+*][^)]*\)\s*\{\d+,\}/.test(s)) return true;   // (...+...){n,}
+  return false;
+}
+function validRegex(src) {
+  if (isDangerousRegex(src)) return false;
+  try { new RegExp(src); return true; } catch { return false; }
+}
 
 /**
  * Fast, synchronous sanity check at create/update time: require an https URL
@@ -223,6 +243,6 @@ function init() {
 
 module.exports = {
   list, get, create, update, remove,
-  sanitize, testLine, init, refresh,
+  sanitize, testLine, init, refresh, validRegex, isDangerousRegex,
   ACTIONS, MATCH_TYPES, POWER_ACTIONS,
 };

@@ -75,6 +75,9 @@ async function restore(server, backupId) {
     if (entry.isDirectory) continue;
     let target;
     try { target = files.resolve(server, '/' + entry.entryName); } catch { continue; } // zip-slip safe
+    // Anti zip-bomb: bound by the DECLARED size before getData() inflates the entry.
+    const declared = (entry.header && entry.header.size) || 0;
+    if (written + declared > budget) { files.invalidateDisk(server.id); throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }
     const data = entry.getData();
     written += data.length;
     if (written > budget) { files.invalidateDisk(server.id); throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }

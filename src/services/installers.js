@@ -63,6 +63,8 @@ async function fetchJson(url) {
   return res.json();
 }
 
+const MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024 * 1024; // hard ceiling per downloaded file (anti disk-fill DoS)
+
 async function download(url, dest, log) {
   // SSRF guard: only https to public hosts, re-validated on each redirect hop.
   // Closes the modpack-index vector where `.mrpack` files[] (or a 30x redirect)
@@ -70,11 +72,15 @@ async function download(url, dest, log) {
   const res = await nettrust.safeFetch(url, { headers: { 'User-Agent': 'CloudPanel/1.0' } });
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${url}`);
   const total = Number(res.headers.get('content-length') || 0);
+  // Early-out on an honest content-length; the running counter below is the real
+  // guard since the header is attacker-controlled/optional.
+  if (total && total > MAX_DOWNLOAD_BYTES) throw new Error(`Refusing to download ${(total / 1073741824).toFixed(1)} GiB — exceeds the size limit.`);
   let received = 0;
   let lastPct = -1;
   const src = Readable.fromWeb(res.body);
   src.on('data', (chunk) => {
     received += chunk.length;
+    if (received > MAX_DOWNLOAD_BYTES) { src.destroy(new Error('Download exceeded the size limit')); return; }
     if (total) {
       const pct = Math.floor((received / total) * 100);
       if (pct >= lastPct + 10) { lastPct = pct; log(`  …downloaded ${pct}% (${(received / 1048576).toFixed(1)} MiB)`); }

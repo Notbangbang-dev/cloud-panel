@@ -247,6 +247,10 @@ async function unzip(server, rel) {
     const targetRel = (baseRel === '/' ? '' : baseRel) + '/' + entry.entryName;
     let target;
     try { target = resolve(server, targetRel); } catch { continue; } // skip zip-slip entries
+    // Anti zip-bomb: check the DECLARED uncompressed size BEFORE getData() (which
+    // inflates the whole entry into memory) so one giant entry can't OOM the panel.
+    const declared = (entry.header && entry.header.size) || 0;
+    if (written + declared > budget) { invalidateDisk(server.id); throw Object.assign(new Error('Archive contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }
     const data = entry.getData();
     written += data.length;
     if (written > budget) { invalidateDisk(server.id); throw Object.assign(new Error('Archive contents exceed the disk quota for this server'), { code: 'EDQUOT' }); }

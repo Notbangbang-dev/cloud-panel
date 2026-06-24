@@ -26,6 +26,24 @@ const { serializeServer, serializeNode } = require('./helpers');
 const router = express.Router();
 router.use(auth.authRequired, auth.adminRequired);
 
+// ---- Panel self-health (admin-only; the public /api/health is just liveness) --
+router.get('/health', (req, res) => {
+  let servers = null;
+  try { const all = db.all('servers'); servers = { total: all.length, running: all.filter((s) => s.status === 'running').length }; } catch { /* db not ready */ }
+  let sandbox = { mode: 'host' };
+  try { const s = require('../services/oci').status(); sandbox = { mode: s.active ? 'oci' : 'host', runtime: s.runtime, active: s.active }; } catch { /* oci optional */ }
+  res.json({ data: {
+    status: 'ok',
+    node: process.version,
+    uptimeSec: Math.round(process.uptime()),
+    memoryMb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
+    store: db.backend ? db.backend.kind : 'unknown',
+    sandbox,
+    servers,
+    time: new Date().toISOString(),
+  } });
+});
+
 // ---- Overview -------------------------------------------------------------
 
 router.get('/overview', (req, res) => {

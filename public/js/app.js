@@ -239,7 +239,7 @@
       );
 
       const crumbs = h('div', { class: 'crumbs' });
-      const search = h('input', { placeholder: 'Jump to a server…' });
+      const search = h('input', { placeholder: 'Jump to a server…', 'aria-label': 'Jump to a server', type: 'search' });
       search.addEventListener('keydown', async (e) => {
         if (e.key !== 'Enter' || !search.value.trim()) return;
         try {
@@ -251,7 +251,7 @@
         } catch (err) { CP.ui.toast(err.message, 'err'); }
       });
 
-      const menuBtn = h('button', { class: 'btn ghost icon menu-btn', html: icon('menu', 18), onclick: () => sidebar.classList.toggle('open') });
+      const menuBtn = h('button', { class: 'btn ghost icon menu-btn', 'aria-label': 'Toggle navigation menu', html: icon('menu', 18), onclick: () => sidebar.classList.toggle('open') });
 
       const topbar = h('header', { class: 'topbar' },
         menuBtn, crumbs, h('div', { class: 'grow' }),

@@ -489,7 +489,7 @@ router.get('/servers/:id/files/contents', loadServer, requirePerm('file'), async
   }
 });
 
-router.post('/servers/:id/files/write', loadServer, requirePerm('file'), async (req, res) => {
+router.post('/servers/:id/files/write', loadServer, requirePerm('file'), activeRequired, async (req, res) => {
   try {
     const { path: p, content } = req.body || {};
     const saved = await files.write(req.server, p, content);
@@ -499,7 +499,7 @@ router.post('/servers/:id/files/write', loadServer, requirePerm('file'), async (
   }
 });
 
-router.post('/servers/:id/files/mkdir', loadServer, requirePerm('file'), async (req, res) => {
+router.post('/servers/:id/files/mkdir', loadServer, requirePerm('file'), activeRequired, async (req, res) => {
   try {
     const saved = await files.mkdir(req.server, (req.body || {}).path);
     res.json({ ok: true, path: saved });
@@ -508,7 +508,7 @@ router.post('/servers/:id/files/mkdir', loadServer, requirePerm('file'), async (
   }
 });
 
-router.post('/servers/:id/files/rename', loadServer, requirePerm('file'), async (req, res) => {
+router.post('/servers/:id/files/rename', loadServer, requirePerm('file'), activeRequired, async (req, res) => {
   try {
     const { from, to } = req.body || {};
     const saved = await files.rename(req.server, from, to);
@@ -518,7 +518,7 @@ router.post('/servers/:id/files/rename', loadServer, requirePerm('file'), async 
   }
 });
 
-router.post('/servers/:id/files/delete', loadServer, requirePerm('file'), async (req, res) => {
+router.post('/servers/:id/files/delete', loadServer, requirePerm('file'), activeRequired, async (req, res) => {
   try {
     await files.remove(req.server, (req.body || {}).path);
     res.json({ ok: true });
@@ -529,7 +529,7 @@ router.post('/servers/:id/files/delete', loadServer, requirePerm('file'), async 
 
 // Streamed upload: raw body -> file at ?path=. Used for files & folder uploads
 // (the client sends each file with its relative path).
-router.post('/servers/:id/files/upload', loadServer, requirePerm('file'), async (req, res) => {
+router.post('/servers/:id/files/upload', loadServer, requirePerm('file'), activeRequired, async (req, res) => {
   try {
     const saved = await files.saveStream(req.server, req.query.path || '/', req);
     res.json({ ok: true, path: saved });
@@ -539,7 +539,7 @@ router.post('/servers/:id/files/upload', loadServer, requirePerm('file'), async 
 });
 
 // Extract an uploaded .zip in place.
-router.post('/servers/:id/files/unzip', loadServer, requirePerm('file'), async (req, res) => {
+router.post('/servers/:id/files/unzip', loadServer, requirePerm('file'), activeRequired, async (req, res) => {
   try {
     const result = await files.unzip(req.server, (req.body || {}).path);
     res.json({ ok: true, ...result });

@@ -4,6 +4,52 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.12.0] — 2026-06-24 — "Hardened"
+
+### 🛡️ Security hardening (from an internal adversarial audit)
+A multi-agent security audit of the auth/SFTP/files/SSRF/route surfaces turned
+up real, verified issues — fixed here (with regression tests):
+
+- **SFTP authorization bypass (HIGH).** SFTP sessions only checked server
+  *access*, never the per-server **`file` permission** — so a subuser invited
+  with any grant (e.g. console-only) could read/write/delete the whole volume
+  over SFTP, bypassing the web file-manager's permission model. SFTP now
+  requires the `file` permission, matching the web API.
+- **SSRF guard bypass (HIGH).** The private-IP check only matched the dotted
+  `::ffff:1.2.3.4` form; the equivalent **hex IPv4-mapped IPv6** (`::ffff:7f00:1`,
+  `::ffff:a9fe:a9fe` = cloud metadata, etc.) slipped through and could reach
+  loopback / RFC1918 / `169.254.169.254` via user-supplied URLs (modpack files,
+  automation webhooks). Now both forms are decoded and blocked.
+- **Automation regex ReDoS (HIGH).** A user "evil regex" like `(a+)+$` runs
+  synchronously and could freeze the whole single-process panel. Nested-
+  quantifier patterns are now rejected at create/test time.
+- **Zip-bomb OOM (HIGH).** Unzip and backup-restore now check each entry's
+  declared uncompressed size **before** decompressing, so one tiny entry can't
+  inflate to many GB and OOM the panel.
+- **Unbounded installer downloads (MEDIUM).** Jar/modpack downloads now enforce
+  an 8 GiB ceiling (the size header is untrusted, so a running byte counter
+  aborts oversized streams).
+- **AuthZ consistency (LOW).** The mutating file routes (write/upload/unzip/
+  mkdir/rename/delete) now require an **active** (approved) account, like the
+  rest of the mutating API.
+- **Reduced info disclosure (LOW).** The unauthenticated `/api/health` is now a
+  bare liveness signal; detailed self-health (Node version, memory, store,
+  sandbox, server counts) moved to **admin-only** `GET /api/admin/health`.
+
+### ♿ Accessibility
+- Added `aria-label`s to icon-only controls (menu toggle, search, modal close)
+  and made the modal close keyboard-activatable.
+
+### 📣 Honest positioning
+- README + package description now state plainly that Cloud Panel is a
+  **single-node** panel (the Nodes/Allocations screens organize one host — there
+  is no remote daemon yet), with a clear **"Who this is for"** section. Tones
+  down the marketing to match what the architecture actually delivers.
+
+### ✅ Tests
+- Suite grown to **18 tests** — added the SSRF IPv6 classifier, the ReDoS
+  prelinter, and the cross-account trial anti-abuse path.
+
 ## [2.11.0] — 2026-06-24 — "Foundation"
 
 ### ✅ Automated tests + CI (the panel finally has a safety net)

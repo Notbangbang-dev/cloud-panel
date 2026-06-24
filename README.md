@@ -1,7 +1,7 @@
 # Cloud Panel
 
-> A Pterodactyl-style game server management panel — with **PufferPanel's default ports**.
-> Deploy. Scale. Dominate.
+> A self-hostable, **single-node** game server management panel — Pterodactyl-style
+> UX with **PufferPanel's default ports**. Deploy. Scale. Dominate.
 
 **Repository:** https://github.com/Notbangbang-dev/cloud-panel
 
@@ -9,6 +9,28 @@ Cloud Panel is a self-contained game server control panel. It boots in seconds,
 manages **real** server processes, streams a **live console** over WebSockets,
 ships a **per-server SFTP** server, and includes a slick admin console for users,
 nodes, locations, eggs and port allocations.
+
+## 🎯 Who this is for (and what it isn't)
+
+Cloud Panel is built for **one operator (or a small, trusted team) running game
+servers for themselves or a community on a single machine**. In that setting
+it's genuinely great: one-command install, a polished UI, real one-click eggs,
+and honest security defaults.
+
+A few things to be straight about — so the version number and the confident
+voice don't oversell it:
+
+- **It's single-node.** Servers run on the **same host as the panel**. The
+  *Nodes / Locations / Allocations* admin screens organize ports and metadata,
+  but there is **no separate daemon**, so you can't yet distribute servers across
+  multiple machines the way Pterodactyl (panel) + Wings (per-node daemon) does.
+  Plan capacity for one box.
+- **Multi-tenant = sandbox required.** Since v2.9.0 the panel is secure by
+  default and refuses to run servers unless a sandbox is active (`CP_OCI=1`) or
+  you explicitly accept the risk on a trusted panel. See **SECURITY.md**.
+- **Young project.** Fast-moving and tested, but not yet battle-tested at scale
+  or third-party audited. Treat it as a capable hobby/community panel, not a
+  drop-in commercial multi-tenant hosting platform.
 
 It deliberately uses **PufferPanel's ports** rather than Pterodactyl's:
 

@@ -45,10 +45,47 @@ function isPrivateIp(addr) {
     if (lower === '::1' || lower === '::') return true;           // loopback / unspecified
     if (lower.startsWith('fe80')) return true;                    // link-local
     if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique local
-    if (lower.startsWith('::ffff:')) return isPrivateIp(lower.slice('::ffff:'.length)); // v4-mapped
+    // IPv4-mapped/compatible — handle BOTH textual forms: dotted (::ffff:1.2.3.4)
+    // AND the hex form Node also accepts (::ffff:7f00:1, ::ffff:a9fe:a9fe). The
+    // old code only matched the dotted form, so the hex form bypassed the guard
+    // and reached loopback / RFC1918 / 169.254.169.254 cloud metadata (SSRF).
+    const v4 = embeddedIPv4(lower);
+    if (v4) return isPrivateIp(v4);
     return false;
   }
   return false; // not an IP literal
+}
+
+/** Expand an IPv6 literal to its 8 integer groups, or null if not parseable as
+ *  a pure-hex IPv6 (dotted-quad tails are handled separately by the caller). */
+function expandIPv6(s) {
+  s = String(s).split('%')[0];
+  if (!s.includes(':')) return null;
+  let head, tail;
+  if (s.includes('::')) { const [h, t] = s.split('::'); head = h ? h.split(':') : []; tail = t ? t.split(':') : []; }
+  else { head = s.split(':'); tail = []; }
+  if ([...head, ...tail].some((g) => g.includes('.'))) return null; // embedded dotted v4 → caller handles
+  const fill = 8 - (head.length + tail.length);
+  if (fill < 0) return null;
+  const groups = [...head, ...Array(fill).fill('0'), ...tail].map((g) => parseInt(g || '0', 16));
+  if (groups.length !== 8 || groups.some((n) => !Number.isInteger(n) || n < 0 || n > 0xffff)) return null;
+  return groups;
+}
+
+/** If `lower` is a v4-mapped/-compatible IPv6 address (in EITHER the dotted
+ *  `::ffff:1.2.3.4` or hex `::ffff:7f00:1` form), return the embedded IPv4 as a
+ *  dotted string; otherwise null. Used so the private-range check can't be
+ *  bypassed with the hex encoding. */
+function embeddedIPv4(lower) {
+  const dotted = lower.match(/(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/);
+  if (dotted) return dotted[1];
+  const g = expandIPv6(lower);
+  if (!g) return null;
+  const isMapped = g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0xffff;
+  const isCompat = g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0 && (g[6] !== 0 || g[7] !== 0);
+  if (!isMapped && !isCompat) return null;
+  const hi = g[6], lo = g[7];
+  return [(hi >>> 8) & 255, hi & 255, (lo >>> 8) & 255, lo & 255].join('.');
 }
 
 /** True for hostnames that should never be reachable as an egress target. */

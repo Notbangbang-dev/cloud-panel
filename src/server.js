@@ -72,24 +72,14 @@ app.get('/api/health', (req, res) => {
   let sandbox;
   try { const s = oci.status(); sandbox = { mode: s.active ? 'oci' : 'host', runtime: s.runtime, active: s.active }; }
   catch { sandbox = { mode: 'host' }; }
-  let servers = null;
-  try {
-    const all = db.all('servers');
-    servers = { total: all.length, running: all.filter((s) => s.status === 'running').length };
-  } catch { /* db not ready */ }
+  // Keep the UNAUTHENTICATED payload to a liveness signal + already-public info
+  // (brand/ports). Detailed self-health (Node version, memory, server counts)
+  // is recon-useful, so it lives behind admin auth at GET /api/admin/health.
   res.json({
     status: 'ok',
     brand,
     ports: { web: config.webPort, sftp: config.sftpPort },
-    store: db.backend ? db.backend.kind : 'unknown',
-    sandbox,
-    // Panel self-health (basic observability without external deps).
-    process: {
-      node: process.version,
-      uptimeSec: Math.round(process.uptime()),
-      memoryMb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
-    },
-    servers,
+    sandbox: { mode: sandbox.mode },
     time: new Date().toISOString(),
   });
 });

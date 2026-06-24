@@ -244,7 +244,8 @@
     const modal = h('div', { class: 'modal' + (size === 'lg' ? ' lg' : '') },
       h('div', { class: 'modal-head' },
         h('h3', {}, title || ''),
-        h('span', { class: 'x', html: CP.icon('x', 20), onclick: close })
+        h('span', { class: 'x', role: 'button', tabindex: '0', 'aria-label': 'Close dialog', html: CP.icon('x', 20), onclick: close,
+          onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); close(); } } })
       ),
       h('div', { class: 'modal-body' }, body),
       footer ? h('div', { class: 'modal-foot' }, footer) : null

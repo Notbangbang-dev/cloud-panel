@@ -19,7 +19,7 @@ const config = require('../config');
 const db = require('../db');
 const auth = require('../auth');
 const files = require('../services/files');
-const { canAccessServer } = require('../routes/helpers');
+const { canAccessServer, hasPermission } = require('../routes/helpers');
 
 // ---- SFTP auth brute-force throttle (per source IP) -----------------------
 // The web login is rate-limited; SFTP password auth must be too, or it becomes
@@ -139,8 +139,11 @@ function start() {
 
       let target = identifier
         ? db.find('servers', (s) => s.identifier === identifier || s.uuid === identifier)
-        : db.find('servers', (s) => canAccessServer(user, s));
-      if (!target || !canAccessServer(user, target)) return fail();
+        : db.find('servers', (s) => canAccessServer(user, s) && hasPermission(user, s, 'file'));
+      // SFTP is full file read/write — it must require the same `file` permission
+      // the web file manager does. Without this a subuser invited with ANY grant
+      // (e.g. console-only) could read/write/delete the whole volume over SFTP.
+      if (!target || !canAccessServer(user, target) || !hasPermission(user, target, 'file')) return fail();
 
       authClear(ip);
       ctxServer = target;
