@@ -4,6 +4,16 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.8.1] — 2026-06-24
+
+### 🐛 Fixes
+- **Admin → Settings: the Maintenance "Schedule a window" date inputs no longer
+  overflow their card.** `datetime-local` controls have a fixed intrinsic
+  min-width and wouldn't shrink inside the two-column grid, so the **End** field
+  was clipped at the card's right edge. Form controls (and the grid fields that
+  hold them) can now shrink to fit — verified the End input went from 122px of
+  overflow to 0.
+
 ## [2.8.0] — 2026-06-24 — "Trial Guard"
 
 ### 🔒 Free trials now actually end (and are hard to abuse)
