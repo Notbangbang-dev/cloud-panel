@@ -41,7 +41,13 @@ function create(server, { name, createdBy } = {}) {
   const id = db.uid('bak');
   const dest = backupFile(server.id, id);
   const zip = new AdmZip();
-  try { zip.addLocalFolder(root); } catch { /* empty volume is fine */ }
+  // Only an absent/empty volume is acceptable. A real read/permission error must
+  // FAIL the backup loudly — silently writing an empty zip the user trusts as a
+  // real snapshot is worse than no backup at all.
+  if (fs.existsSync(root)) {
+    try { zip.addLocalFolder(root); }
+    catch (e) { throw new Error('Backup failed while reading server files: ' + e.message); }
+  }
   zip.writeZip(dest);
   let sizeBytes = 0;
   try { sizeBytes = fs.statSync(dest).size; } catch {}

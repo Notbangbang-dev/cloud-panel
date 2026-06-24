@@ -304,7 +304,7 @@
   };
 
   CP.statusPill = (status) =>
-    h('span', { class: 'status ' + status, html: `<span class="dot"></span>${status}` });
+    h('span', { class: 'status ' + status, html: `<span class="dot"></span>${String(status).replace(/_/g, ' ')}` });
 
   CP.spinner = (text = 'Loading…') =>
     h('div', { class: 'loading-row' }, h('div', { class: 'spinner' }), text);

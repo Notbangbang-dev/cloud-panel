@@ -29,6 +29,17 @@ const { securityHeaders } = require('./middleware');
 db.load();
 isolation.init(); // optional: lock panel internals + enable per-server-user isolation
 oci.init(); // optional: run servers in OCI containers (CP_OCI=1); warns if required but unavailable
+// Reliability: the runtime map is empty on boot, so clear stale 'running' rows
+// and resume servers that were running before shutdown (unless autoStart is off).
+try {
+  const wasRunning = pm.reconcile();
+  const resume = wasRunning.filter((s) => s.autoStart !== false && !s.suspended);
+  if (resume.length) console.log(`[boot] resuming ${resume.length} server(s) that were running before shutdown`);
+  for (const s of resume) {
+    const res = pm.start(s);
+    if (res && res.ok === false) console.warn(`[boot] could not resume '${s.name}': ${res.error}`);
+  }
+} catch (e) { console.warn('[boot] server reconcile/resume failed:', e.message); }
 automations.init(); // start watching consoles for servers that have rules
 schedules.init(); // start the cron scheduler for time-based tasks
 players.init(); // track live player rosters from console output

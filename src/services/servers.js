@@ -81,6 +81,8 @@ function createServer({ name, ownerId, eggId, nodeId, allocationId, memory, cpu,
     additionalAllocationIds: [],
     status: 'offline',
     suspended: false,
+    autoStart: true,   // resume on panel boot if it was running before shutdown
+    autoRestart: true, // auto-restart on crash (rate-capped)
     limits: {
       memory: Math.floor(Number(memory) || 1024),
       swap: 0,
@@ -102,7 +104,11 @@ function createServer({ name, ownerId, eggId, nodeId, allocationId, memory, cpu,
   });
 
   db.update('allocations', alloc.id, { serverId: server.id, primary: true });
-  pm.provision(server, { trigger: 'install' }).catch(() => {});
+  // Provisioning marks the server 'install_failed' on error (see processManager);
+  // log any unexpected rejection too instead of swallowing it.
+  pm.provision(server, { trigger: 'install' }).catch((e) => {
+    db.log({ type: 'install', serverId: server.id, message: `Install error: ${(e && e.message) || e}` });
+  });
   try { require('./players').watch(server.id); } catch {}
   return server;
 }

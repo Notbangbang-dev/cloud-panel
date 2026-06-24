@@ -21,6 +21,11 @@ const installers = require('./installers');
 
 const DEMO_PATH = path.join(config.root, 'demo', 'demo-server.js');
 const LOG_LIMIT = 250;
+// Auto-restart on crash: at most N restarts within the rolling window, then give
+// up (so a server that crash-loops doesn't spin forever). Tunable later.
+const CRASH_RESTART_MAX = 5;
+const CRASH_RESTART_WINDOW_MS = 10 * 60 * 1000;
+const CRASH_RESTART_DELAY_MS = 4000;
 const DONE_RE = /(\bdone\b|server started|listening on|ready!|ready in|joinable)/i;
 
 const runtimes = new Map(); // serverId -> runtime
@@ -38,6 +43,7 @@ class Runtime extends EventEmitter {
     this.stats = { cpu: 0, memory: 0, memoryLimit: 0, disk: 0, diskLimit: 0, uptime: 0 };
     this.startedAt = 0;
     this.statsTimer = null;
+    this.restarts = []; // timestamps of recent auto-restarts (crash-loop guard)
   }
 
   pushLine(line, stream = 'out') {
@@ -58,6 +64,32 @@ class Runtime extends EventEmitter {
 function rt(serverId) {
   if (!runtimes.has(serverId)) runtimes.set(serverId, new Runtime(serverId));
   return runtimes.get(serverId);
+}
+
+/** Crash-loop guard: true if we're still under the restart cap for this window. */
+function crashRestartAllowed(r, now) {
+  r.restarts = r.restarts.filter((t) => now - t < CRASH_RESTART_WINDOW_MS);
+  return r.restarts.length < CRASH_RESTART_MAX;
+}
+
+/** Restart a server after it crashed, unless disabled, suspended, or crash-looping. */
+function maybeAutoRestart(serverId) {
+  const fresh = db.get('servers', serverId);
+  if (!fresh || fresh.suspended || fresh.autoRestart === false) return;
+  const r = rt(serverId);
+  const now = Date.now();
+  if (!crashRestartAllowed(r, now)) {
+    r.pushLine(`[31m[Cloud Panel] Auto-restart suppressed — crashed too many times (${CRASH_RESTART_MAX} in ${Math.round(CRASH_RESTART_WINDOW_MS / 60000)}m). Fix it, then start it manually.[0m`, 'err');
+    return;
+  }
+  r.restarts.push(now);
+  r.pushLine(`[33m[Cloud Panel] Crash detected — auto-restarting in ${Math.round(CRASH_RESTART_DELAY_MS / 1000)}s (attempt ${r.restarts.length}/${CRASH_RESTART_MAX} this window)…[0m`);
+  setTimeout(() => {
+    const s = db.get('servers', serverId);
+    if (!s || s.suspended || rt(serverId).proc) return; // gone / suspended / already back up
+    const res = manager.start(s);
+    if (res && res.ok === false) rt(serverId).pushLine(`[31m[Cloud Panel] Auto-restart blocked: ${res.error}[0m`, 'err');
+  }, CRASH_RESTART_DELAY_MS);
 }
 
 function volumeDir(server) {
@@ -338,6 +370,8 @@ const manager = {
       r.setStatus(wasStopping || clean ? 'offline' : 'crashed');
       r.stats = { cpu: 0, memory: 0, memoryLimit: 0, disk: r.stats.disk || 0, diskLimit: r.stats.diskLimit || 0, uptime: 0 };
       r.emit('stats', r.stats);
+      // Reliability: bring a crashed server back automatically (rate-capped).
+      if (!wasStopping && !clean) maybeAutoRestart(server.id);
     });
 
     ensureStatsLoop();
@@ -469,13 +503,31 @@ const manager = {
       return { ok: true };
     } catch (err) {
       r.pushLine(`\u001b[31m[Cloud Panel] Install failed: ${err.message}\u001b[0m`, 'err');
-      r.setStatus('offline');
+      // Distinct from 'offline' (ready): a failed install must NOT look like a
+      // server that's ready to start. Surfaced in the UI; reinstall to retry.
+      r.setStatus('install_failed');
+      db.log({ type: 'install', serverId: server.id, message: `Install FAILED for '${server.name}': ${err.message}` });
       return { ok: false, error: err.message };
     }
   },
 
   isInstalling(serverId) {
     return rt(serverId).status === 'installing';
+  },
+
+  /** Boot-time state reconciliation: the in-memory runtime map is empty on
+   *  startup, so any persisted 'running'/'starting'/'stopping'/'crashed' row is
+   *  stale. Reset them to 'offline' and return the servers that were running, so
+   *  the caller can resume the ones flagged autoStart. */
+  reconcile() {
+    const wasRunning = [];
+    for (const s of db.all('servers')) {
+      if (s.status === 'running' || s.status === 'starting') wasRunning.push(s);
+      if (['running', 'starting', 'stopping', 'crashed'].includes(s.status)) {
+        db.update('servers', s.id, { status: 'offline' });
+      }
+    }
+    return wasRunning;
   },
 
   shutdownAll() {

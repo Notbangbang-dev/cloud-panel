@@ -312,6 +312,8 @@ select option { background: var(--surface-solid); }
 .status.installing .dot { background: var(--cyan); animation: blip 1s infinite; }
 .status.crashed { color: var(--red); background: rgba(248, 81, 73, 0.1); border-color: rgba(248, 81, 73, 0.28); }
 .status.crashed .dot { background: var(--red); }
+.status.install_failed { color: var(--red); background: rgba(248, 81, 73, 0.1); border-color: rgba(248, 81, 73, 0.28); }
+.status.install_failed .dot { background: var(--red); }
 .status.suspended { color: var(--violet); background: rgba(129, 140, 248, 0.1); border-color: rgba(129, 140, 248, 0.25); }
 @keyframes blip { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 

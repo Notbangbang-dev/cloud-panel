@@ -634,6 +634,8 @@ function migrateServers() {
       patch.featureLimits = { ...s.featureLimits, databases: 1 };
     if (s.statusPage === undefined)
       patch.statusPage = { enabled: false, slug: null, showPlayers: true, showResources: false };
+    if (s.autoStart === undefined) patch.autoStart = true;   // resume on boot if it was running
+    if (s.autoRestart === undefined) patch.autoRestart = true; // restart on crash (rate-capped)
     if (Object.keys(patch).length) backend.update('servers', s.id, patch);
   }
 }

@@ -86,6 +86,8 @@ function serializeServer(server, { detail = false, user = null } = {}) {
     description: server.description,
     status: state.status,
     suspended: server.suspended,
+    autoStart: server.autoStart !== false,
+    autoRestart: server.autoRestart !== false,
     limits: server.limits,
     featureLimits: server.featureLimits,
     node: node ? { id: node.id, name: node.name } : null,

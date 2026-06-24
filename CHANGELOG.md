@@ -4,6 +4,37 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.10.0] — 2026-06-24 — "Resilience"
+
+### 🔁 The panel now survives restarts and crashes
+The biggest reliability gaps from the self-review are closed.
+
+- **Resume on boot.** On startup the panel reconciles stale state (the in-memory
+  runtime is empty after a restart, so any persisted `running`/`starting`/
+  `stopping`/`crashed` row is reset to `offline`) and then **re-launches the
+  servers that were running before shutdown**. So a panel restart/update no
+  longer silently leaves every server down. Per-server **Auto-start** toggle
+  (default on) controls this.
+- **Auto-restart on crash.** When a server exits unexpectedly it now **restarts
+  automatically** after a short delay, with a crash-loop guard (max 5 restarts
+  per 10 minutes, then it stops and tells you). Per-server **Auto-restart**
+  toggle (default on).
+- **No more phantom-online servers.** Stale `running` rows left by a hard kill
+  are reconciled to `offline` at boot.
+
+### 🐛 Reliability fixes
+- **Failed installs are no longer disguised as ready.** A server whose install
+  fails now shows a distinct **`install failed`** status (was silently set to
+  `offline`, indistinguishable from a ready server) and the error is logged.
+- **Backups fail loudly instead of silently capturing nothing.** A real read/
+  permission error while archiving now fails the backup with a clear message,
+  instead of writing an empty zip you'd trust as a real snapshot. (Only a
+  genuinely absent/empty volume is treated as OK.)
+
+### ⚙️ Settings
+- New per-server **Auto-start** and **Auto-restart** toggles (API:
+  `POST /servers/:id/settings/rename`), backfilled to **on** for existing servers.
+
 ## [2.9.0] — 2026-06-24 — "Bastion"
 
 ### 🔐 Secure by default — servers refuse to run unsandboxed (audit C1)

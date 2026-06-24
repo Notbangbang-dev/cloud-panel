@@ -682,10 +682,13 @@ router.put('/servers/:id/startup', loadServer, requirePerm('startup'), (req, res
 // ---- Settings -------------------------------------------------------------
 
 router.post('/servers/:id/settings/rename', loadServer, requirePerm('settings'), (req, res) => {
-  const { name, description } = req.body || {};
+  const { name, description, autoStart, autoRestart } = req.body || {};
   const patch = {};
   if (name && name.trim()) patch.name = name.trim();
   if (typeof description === 'string') patch.description = description;
+  // Reliability toggles: resume-on-boot + auto-restart-on-crash.
+  if (autoStart !== undefined) patch.autoStart = !!autoStart;
+  if (autoRestart !== undefined) patch.autoRestart = !!autoRestart;
   const updated = db.update('servers', req.server.id, patch);
   res.json({ data: serializeServer(updated, { detail: true, user: req.user }) });
 });
