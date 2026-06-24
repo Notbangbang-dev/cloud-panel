@@ -10,6 +10,7 @@
 const { spawn } = require('child_process');
 const isolation = require('./isolation');
 const oci = require('./oci');
+const javaSvc = require('./java');
 const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
@@ -291,7 +292,18 @@ const manager = {
 
     const egg = db.get('eggs', server.eggId);
     const dir = volumeDir(server);
-    const cmd = resolveStartup(server, egg);
+    const baseCmd = resolveStartup(server, egg);
+    // Java version: in OCI mode the chosen JRE comes from the container image
+    // (see oci.imageFor), so the command keeps the bare `java`. In host mode we
+    // rewrite `java` to the configured CP_JAVA_<version> binary when present.
+    let cmd = baseCmd;
+    let javaNote = null;
+    if (!useOci) {
+      const j = javaSvc.applyHostBinary(baseCmd, server, egg);
+      cmd = j.cmd;
+      javaNote = j.note;
+    }
+    if (javaNote) r.pushLine('[java] ' + javaNote);
     const [program, ...args] = tokenize(cmd);
     // Both modes run the tokenized argv directly (no shell), so a program is
     // always required — host via spawn(program, args), OCI via the container.

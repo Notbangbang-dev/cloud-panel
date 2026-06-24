@@ -752,11 +752,24 @@
         h('span', {}, `${v.name}  ·  ${v.env}`), input);
     });
 
+    // Java version selector — only for Java eggs. The version is constrained to
+    // an allowlist server-side, so it is safe for owners (not just admins).
+    const jcfg = cfg.java && cfg.java.eligible ? cfg.java : null;
+    const javaImageChip = jcfg ? h('span', { class: 'mono faint', style: { marginLeft: '6px' } }, jcfg.image) : null;
+    const javaSelect = jcfg
+      ? h('select', {
+          onchange: () => { javaImageChip.textContent = `eclipse-temurin:${javaSelect.value}-jre`; },
+        }, jcfg.options.map((v) =>
+          h('option', { value: String(v), ...(v === jcfg.current ? { selected: true } : {}) },
+            `Java ${v}${v === jcfg.default ? '  ·  egg default' : ''}`)))
+      : null;
+
     const save = h('button', { class: 'btn primary', html: `${icon('save', 15)} Save changes`, onclick: async () => {
       const environment = {};
       Object.entries(varInputs).forEach(([k, el]) => (environment[k] = el.value));
       const payload = { environment };
       if (isAdmin) payload.startup = startupTa.value; // server also enforces this
+      if (javaSelect) payload.javaVersion = Number(javaSelect.value);
       try {
         await CP.api.put(`/servers/${S.server.id}/startup`, payload);
         CP.ui.toast('Startup configuration saved', 'ok');
@@ -773,6 +786,13 @@
         startupTa,
         cfg.docker ? h('div', { class: 'chip', style: { marginTop: '12px' }, html: `${icon('box', 13)} ${CP.esc(cfg.docker)}` }) : null
       ),
+      jcfg ? h('div', { class: 'card', style: { marginTop: '18px' } },
+        h('h3', {}, 'Java version'),
+        h('p', { class: 'muted', style: { fontSize: '13px', margin: '4px 0 14px' } },
+          'Pick the Java runtime for this server (e.g. Java 21 for modern Minecraft, Java 8 for legacy). With the container sandbox this swaps the image automatically; in host mode it uses a configured CP_JAVA_<version> binary.'),
+        h('label', { class: 'field', style: { maxWidth: '340px' } }, h('span', {}, 'Runtime'), javaSelect),
+        h('div', { class: 'chip', style: { marginTop: '12px' } }, h('span', { html: icon('box', 13) }), javaImageChip)
+      ) : null,
       varFields.length ? h('div', { class: 'card', style: { marginTop: '18px' } },
         h('h3', { style: { marginBottom: '16px' } }, 'Variables'),
         h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' } }, varFields)

@@ -29,6 +29,7 @@
 
 const { spawn, execFileSync } = require('child_process');
 const config = require('../config');
+const javaSvc = require('./java');
 
 const OCI = config.oci || {};
 
@@ -87,9 +88,11 @@ function containerName(serverId) {
   return `cloudpanel-${safe}`;
 }
 
-/** Resolve the image for an egg, falling back to CP_OCI_IMAGE. */
-function imageFor(egg) {
-  return (egg && egg.docker) || OCI.image || '';
+/** Resolve the image for an egg + server (honoring a chosen Java version for
+ *  Java eggs), falling back to CP_OCI_IMAGE. The Java version is allowlist-
+ *  validated in java.js, so this never emits a user-controlled image string. */
+function imageFor(egg, server) {
+  return javaSvc.resolveImage(egg, server) || OCI.image || '';
 }
 
 /** Split a shell-ish string into argv, honoring double quotes (for extraArgs). */
@@ -147,7 +150,7 @@ function portArgs(ports) {
  */
 function buildRunArgs({ server, egg, argv, dir, ports, env }) {
   const name = containerName(server.id);
-  const image = imageFor(egg);
+  const image = imageFor(egg, server);
   if (!image) {
     throw new Error(
       `No container image is set for this egg and CP_OCI_IMAGE is empty — ` +

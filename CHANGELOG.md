@@ -4,6 +4,30 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.17.0] — 2026-06-24 — "Polyglot"
+
+### ☕ Per-server Java version
+- **Each Java server can now choose its Java runtime** (8 / 11 / 17 / 21 / 25) from
+  **Startup → Java version** — no admin or raw-command editing needed. Modern
+  Minecraft wants 21, legacy builds want 8; now it's a dropdown.
+- **In the container sandbox (default), this just swaps the image** to
+  `eclipse-temurin:<version>-jre` — the chosen JRE runs the server, with the same
+  CPU/RAM/PID caps. In host-process mode it uses a configured `CP_JAVA_<version>`
+  binary (see `.env.example`), falling back to the system `java` with a console
+  note when none is set.
+- **Security:** the version is validated against a fixed allowlist server-side, so
+  this field can only ever select an official Temurin image — never an arbitrary
+  container image or command. Safe for server owners, not just admins.
+- New `src/services/java.js` centralizes the allowlist, image resolution and the
+  host-binary rewrite; `oci.imageFor(egg, server)` and the host startup path both
+  route through it.
+
+### ✅ Tests
+- 30 tests (added 6 for the Java allowlist, image resolution, host-binary rewrite
+  and the OCI run image); CI green on Node 18/20/22. Verified end-to-end in the
+  browser: switching to Java 17 swaps the image to `eclipse-temurin:17-jre`, and an
+  out-of-allowlist version is rejected with 400.
+
 ## [2.16.1] — 2026-06-24 — "Ballast, for real"
 
 A follow-up independent audit found that the v2.16.0 "atomic restore" claim was

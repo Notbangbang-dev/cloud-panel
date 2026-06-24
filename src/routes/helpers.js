@@ -119,6 +119,7 @@ function serializeServer(server, { detail = false, user = null } = {}) {
     ...base,
     startup: server.startup,
     environment: server.environment,
+    javaVersion: server.javaVersion ?? null,
     console: server.console || null,
     additionalAllocations: additional,
     eggDetail: egg

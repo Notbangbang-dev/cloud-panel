@@ -5,6 +5,7 @@ const db = require('../db');
 const auth = require('../auth');
 const pm = require('../services/processManager');
 const files = require('../services/files');
+const javaSvc = require('../services/java');
 const settings = require('../services/settings');
 const serversSvc = require('../services/servers');
 const backups = require('../services/backups');
@@ -646,18 +647,28 @@ router.get('/servers/:id/allocations', loadServer, requirePerm('allocation'), (r
 
 router.get('/servers/:id/startup', loadServer, requirePerm('startup'), (req, res) => {
   const egg = db.get('eggs', req.server.eggId);
+  const javaEligible = javaSvc.isJavaEgg(egg);
   res.json({
     data: {
       startup: req.server.startup,
       environment: req.server.environment || {},
       variables: egg ? egg.variables : [],
       docker: egg ? egg.docker : null,
+      java: javaEligible
+        ? {
+            eligible: true,
+            options: javaSvc.ALLOWED_VERSIONS,
+            default: javaSvc.defaultVersion(egg),
+            current: javaSvc.normalizeVersion(req.server.javaVersion) || javaSvc.defaultVersion(egg),
+            image: javaSvc.resolveImage(egg, req.server),
+          }
+        : { eligible: false },
     },
   });
 });
 
 router.put('/servers/:id/startup', loadServer, requirePerm('startup'), (req, res) => {
-  const { startup, environment } = req.body || {};
+  const { startup, environment, javaVersion } = req.body || {};
   const patch = {};
   // SECURITY: servers run as host processes, so the raw startup command is
   // effectively arbitrary code execution on the host. Only administrators may
@@ -666,6 +677,22 @@ router.put('/servers/:id/startup', loadServer, requirePerm('startup'), (req, res
     if (!req.user.admin)
       return res.status(403).json({ error: 'Only an administrator can change the startup command. You can edit variables below.' });
     patch.startup = startup;
+  }
+  // Java version: SAFE for owners to change because it's constrained to a fixed
+  // allowlist (java.js) — it can only ever select an `eclipse-temurin:<v>-jre`
+  // image, never an arbitrary image or command. null/'' clears it (egg default).
+  if (javaVersion !== undefined) {
+    const egg = db.get('eggs', req.server.eggId);
+    if (!javaSvc.isJavaEgg(egg))
+      return res.status(400).json({ error: 'This server’s egg does not run on Java.' });
+    if (javaVersion === null || javaVersion === '') {
+      patch.javaVersion = null;
+    } else {
+      const v = javaSvc.normalizeVersion(javaVersion);
+      if (!v)
+        return res.status(400).json({ error: `Unsupported Java version. Choose one of: ${javaSvc.ALLOWED_VERSIONS.join(', ')}.` });
+      patch.javaVersion = v;
+    }
   }
   if (environment && typeof environment === 'object') {
     for (const v of Object.values(environment)) {
