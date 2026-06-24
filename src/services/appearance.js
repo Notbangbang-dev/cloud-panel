@@ -19,7 +19,7 @@ const db = require('../db');
  * Defaults
  * ------------------------------------------------------------------------- */
 const DEFAULT_APPEARANCE = {
-  preset: 'precision',
+  preset: 'editorial',
   colors: {},
   background: { type: 'preset', value: '', fit: 'cover', blur: 0, dim: 35, fixed: true },
   effects: { animations: true, glass: false, radius: 12 },
@@ -37,6 +37,10 @@ const DEFAULT_APPEARANCE = {
  *  light           — true for light-on-dark inversion hints
  * ------------------------------------------------------------------------- */
 const PRESETS = [
+  {
+    id: 'editorial', name: 'Editorial', tag: 'Serif & soft cyan',
+    p: { bg: '#050507', bg2: '#08080b', surface: '#0b0b0f', surf2: '#121218', text: '#f3f4f6', muted: '#9a9ca6', faint: '#5f626d', primary: '#67e8f9', secondary: '#38bdf8', accent: '#a5b4fc', borderRgb: '236,240,250' },
+  },
   {
     id: 'precision', name: 'Precision', tag: 'Clean, minimal, sharp',
     p: { bg: '#08090c', bg2: '#0c0e13', surface: '#111319', surf2: '#171a22', text: '#f3f5f9', muted: '#9aa1b3', faint: '#646b7e', primary: '#7c83f6', secondary: '#6366f1', accent: '#818cf8', borderRgb: '140,150,182' },
@@ -137,7 +141,7 @@ function sanitize(input = {}) {
   const a = input && typeof input === 'object' ? input : {};
   const out = JSON.parse(JSON.stringify(DEFAULT_APPEARANCE));
 
-  out.preset = PRESET_MAP[a.preset] ? a.preset : 'precision';
+  out.preset = PRESET_MAP[a.preset] ? a.preset : 'editorial';
 
   // Color overrides — only keep recognised, valid colors.
   out.colors = {};
@@ -185,7 +189,7 @@ function sanitize(input = {}) {
  * Resolve the effective palette (preset + valid overrides).
  * ------------------------------------------------------------------------- */
 function resolvePalette(app) {
-  const preset = PRESET_MAP[app.preset] || PRESET_MAP.precision;
+  const preset = PRESET_MAP[app.preset] || PRESET_MAP.editorial;
   const p = { ...preset.p };
   const c = app.colors || {};
   if (isColor(c.bg)) p.bg = c.bg;

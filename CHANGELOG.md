@@ -4,6 +4,28 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.7.0] — 2026-06-23 — "Editorial"
+
+### 🎨 Editorial look + new default theme
+A refined, magazine-style pass over the panel UI. **No routes, behaviour, or
+markup structure changed** — every class name and the live-theming contract are
+preserved.
+
+- **Serif display headings.** Big page headings (dashboard/server titles, auth,
+  legal) are now set in **Instrument Serif** — an elegant editorial serif —
+  while the UI body stays **Geist** and data/console stay **Geist Mono**.
+- **New default theme: `Editorial`.** A near-black canvas with a single soft
+  **cyan** accent. Added as a first-class preset and set as the default; all
+  existing presets (Precision, Nebula, Midnight, Aurora, Sunset, Grape, Matrix,
+  Crimson, Slate, Cotton) remain selectable and the editor is untouched.
+- **Pill chrome.** Buttons are now fully rounded pills; the primary button is a
+  theme-adaptive solid (near-white on dark themes, dark on light) for crisp
+  contrast on any palette.
+- **Cyan section labels.** Uppercase, letter-spaced accent labels.
+
+*Existing installs keep their saved theme; pick **Editorial** in
+Admin → Appearance to switch.*
+
 ## [2.6.0] — 2026-06-23 — "Precision"
 
 ### 🎨 Full front-end redesign — "Precision"

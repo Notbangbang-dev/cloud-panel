@@ -1,7 +1,8 @@
 /* ============================================================
-   Cloud Panel — UI  ·  "Precision"
+   Cloud Panel — UI  ·  "Editorial"
    A clean, restrained operations surface. Hairline borders,
-   flat elevation, one quiet accent, calm motion. Geist type.
+   flat elevation, one quiet cyan accent, calm motion.
+   Instrument Serif display headings + Geist body/Geist Mono.
 
    NOTE: The tokens below are the live-theming contract. The admin
    appearance editor re-emits --bg, --bg-2, --surface(-2/-solid),
@@ -51,6 +52,7 @@
 
   /* ---- Type ---- */
   --display: "Geist", "Segoe UI", system-ui, sans-serif;
+  --serif: "Instrument Serif", Georgia, "Times New Roman", serif;
   --sans: "Geist", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: "Geist Mono", "JetBrains Mono", "SF Mono", Consolas, monospace;
 }
@@ -173,7 +175,7 @@ select option { background: var(--surface-solid); }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer;
   border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
-  padding: 9px 15px; border-radius: var(--radius-sm); font-size: 13.5px; font-weight: 500;
+  padding: 9px 16px; border-radius: 999px; font-size: 13.5px; font-weight: 500;
   font-family: inherit;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, filter 0.15s, transform 0.06s;
   white-space: nowrap; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
@@ -182,12 +184,14 @@ select option { background: var(--surface-solid); }
 .btn:active { transform: scale(0.985); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn.block { width: 100%; }
-.btn.sm { padding: 6px 10px; font-size: 12.5px; }
+.btn.sm { padding: 6px 12px; font-size: 12.5px; }
+/* Primary = theme-adaptive solid pill: near-white ink-button on dark themes,
+   dark on light themes. Always high-contrast (Kurol-style). */
 .btn.primary {
-  background: var(--indigo); border: 1px solid transparent; color: #fff; font-weight: 600;
-  box-shadow: var(--e1);
+  background: var(--text); border: 1px solid transparent; color: var(--bg); font-weight: 600;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 34px -16px rgba(103, 232, 249, 0.5);
 }
-.btn.primary:hover { filter: brightness(1.1); border-color: transparent; background: var(--indigo); }
+.btn.primary:hover { filter: brightness(1.06); border-color: transparent; background: var(--text); }
 .btn.ghost { background: transparent; }
 .btn.ghost:hover { background: rgba(140, 150, 182, 0.08); }
 .btn.green { background: var(--green); border-color: transparent; color: #04140a; font-weight: 600; }
@@ -268,7 +272,7 @@ select option { background: var(--surface-solid); }
 .card.hover { transition: border-color 0.16s, background 0.16s, transform 0.16s; cursor: pointer; }
 .card.hover:hover { border-color: var(--border-strong); background: var(--surface-2); transform: translateY(-2px); }
 .card h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-.section-title { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--faint); font-weight: 600; margin: 30px 0 14px; }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--cyan); font-weight: 500; margin: 30px 0 14px; opacity: 0.9; }
 
 /* Server card */
 .srv-card .top { display: flex; align-items: flex-start; gap: 12px; }
@@ -629,3 +633,16 @@ input[type="range"]::-moz-range-thumb {
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================
+   Editorial display — big page headings set in an elegant serif.
+   Placed last so it wins over the per-section heading rules above.
+   ============================================================ */
+.page-head h2, .srv-header h2, .auth-brand h1,
+.legal-doc h1, .legal-doc h2, .legal-top .brand {
+  font-family: var(--serif); font-weight: 400; letter-spacing: -0.01em;
+}
+.page-head h2 { font-size: 31px; }
+.srv-header h2 { font-size: 29px; }
+.auth-brand h1 { font-size: 27px; }
+.legal-doc h1 { font-size: 44px; }
