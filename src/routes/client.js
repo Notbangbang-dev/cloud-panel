@@ -397,13 +397,13 @@ router.post('/billing/checkout', activeRequired, async (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-router.post('/billing/confirm', async (req, res) => {
+router.post('/billing/confirm', activeRequired, async (req, res) => {
   try { res.json({ data: await billing.confirmCheckout(req.user, String((req.body || {}).sessionId || '')) }); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-router.post('/billing/trial', activeRequired, (req, res) => {
-  try { res.json({ data: billing.startTrial(req.user, String((req.body || {}).planId || '')) }); }
+router.post('/billing/trial', activeRequired, async (req, res) => {
+  try { res.json({ data: await billing.startTrial(req.user, String((req.body || {}).planId || ''), { ip: req.ip }) }); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 

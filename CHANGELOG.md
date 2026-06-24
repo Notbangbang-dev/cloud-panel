@@ -4,6 +4,46 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.8.0] — 2026-06-24 — "Trial Guard"
+
+### 🔒 Free trials now actually end (and are hard to abuse)
+Previously a free trial's end date was stored and shown but **never enforced** —
+`requiresPlan` only checked the status string, and nothing flipped it when the
+clock ran out, so a trial granted permanent access. Fixed:
+
+- **Trials expire on time.** A new request-time reconcile (wired into the auth
+  middleware) downgrades an elapsed trial the instant it lapses — sets
+  `planStatus: 'expired'`, drops the plan, and reverts the quota to the panel
+  defaults. New server creation is blocked and the "pick a plan" gate appears.
+  No scheduler needed; the check is idempotent.
+
+### 🛡️ Trial anti-abuse (cross-account)
+- One trial per **identity**, not just per account. Normalized **email**
+  (gmail dots + `+tag` collapsed), **Discord id**, and **IP** are recorded in a
+  persistent `trialClaims` store; any prior match blocks a new trial — and it
+  survives deleting & re-registering the account.
+- Trials are **blocked over VPN/proxy** when anti-VPN is enabled (stops IP
+  rotation to mint new trials).
+- Trials are restricted to the admin-configured **trial plan** when one is set,
+  and are disabled entirely when trial length is 0 days.
+
+### 🐛 Billing hardening (found in an adversarial review)
+- **Stripe webhooks are now idempotent** — each event id is processed once
+  (defeats replay within the signature window and Stripe's own retries/reordering).
+- **Webhook state changes are ownership-bound** — cancellations/past-due are
+  matched by stored subscription/customer id, never by caller-supplied metadata,
+  so a crafted event can't cancel an account it doesn't own.
+- **Card recovery works** — added `invoice.payment_succeeded` (clears `past_due`)
+  and `customer.subscription.updated` handling.
+- **Checkout confirm is safe & idempotent** — only a genuinely *paid* session
+  activates a plan (no longer trusts `status: complete` alone), a returned
+  session can't be replayed, and the confirm route now requires an active account.
+- **No self-serve quota grants** — claiming a free (price-0) plan is blocked in
+  `free` mode and is idempotent (can't be looped to reset quota).
+- **Deleting a plan** now downgrades members who were on it (no orphaned grants).
+- Plan price is clamped to Stripe's max.
+- Registered the `trialClaims` / `stripeEvents` DB collections.
+
 ## [2.7.2] — 2026-06-23
 
 ### 🐛 Fixes

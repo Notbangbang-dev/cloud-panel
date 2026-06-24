@@ -107,7 +107,11 @@ function authRequired(req, res, next) {
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
   if ((user.tokenVersion || 0) !== (payload.tv || 0))
     return res.status(401).json({ error: 'Session expired — please sign in again.' });
-  req.user = user;
+  // Downgrade an elapsed free trial the moment it expires (idempotent no-op
+  // otherwise). Lazy require avoids any load-order cycle. Failures must not
+  // block auth, so fall back to the raw user record.
+  try { req.user = require('./services/billing').reconcile(user) || user; }
+  catch (e) { req.user = user; }
   next();
 }
 

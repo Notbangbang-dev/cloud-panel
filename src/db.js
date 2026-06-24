@@ -16,7 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 
-const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings', 'backups', 'automations', 'subusers', 'schedules', 'databases', 'achievements', 'ledger', 'plans'];
+const COLLECTIONS = ['users', 'locations', 'nodes', 'eggs', 'servers', 'allocations', 'activity', 'settings', 'backups', 'automations', 'subusers', 'schedules', 'databases', 'achievements', 'ledger', 'plans', 'trialClaims', 'stripeEvents'];
 
 /** Global, admin-editable settings (economy, registration, defaults, shop). */
 const SETTINGS_DEFAULTS = {

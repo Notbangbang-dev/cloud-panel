@@ -16,6 +16,7 @@
 
 const crypto = require('crypto');
 const db = require('../db');
+const ipguard = require('./ipguard');
 
 const STRIPE_API = 'https://api.stripe.com/v1';
 const RES_KEYS = ['memory', 'cpu', 'disk', 'servers', 'backups', 'databases'];
@@ -52,7 +53,40 @@ function requiresPlan(user) {
   if (!user || user.admin) return false;
   const c = cfg();
   if (c.mode !== 'paid' && c.mode !== 'trial') return false;
-  return !['active', 'trialing'].includes(user.planStatus);
+  return !entitled(user);
+}
+
+/** A trial whose end date has passed but is still flagged 'trialing' in the DB. */
+function isTrialExpired(user) {
+  return !!(user && user.planStatus === 'trialing' && user.trialEndsAt && Date.parse(user.trialEndsAt) <= Date.now());
+}
+
+/** Currently entitled to plan quota? Active subscription OR a still-running trial. */
+function entitled(user) {
+  if (!user) return false;
+  if (user.planStatus === 'active') return true;
+  if (user.planStatus === 'trialing') return !isTrialExpired(user);
+  return false;
+}
+
+/**
+ * Downgrade a user whose free trial has elapsed. Idempotent — it only acts on
+ * the trialing→expired transition, so it is safe to call on every request. It is
+ * wired into the auth middleware (authRequired) so an expired trial takes effect
+ * the instant the clock runs out, panel-wide, with no scheduler. Returns the
+ * (possibly updated) user record.
+ */
+function reconcile(user) {
+  if (!isTrialExpired(user)) return user;
+  const d = db.settings().defaults || {};
+  const patch = {
+    planStatus: 'expired',
+    plan: null,
+    resources: { memory: d.memory, cpu: d.cpu, disk: d.disk, servers: d.servers, backups: d.backups, databases: d.databases },
+  };
+  const updated = db.update('users', user.id, patch);
+  db.log({ type: 'billing', userId: user.id, message: `${user.username}'s free trial ended — plan access revoked` });
+  return updated || { ...user, ...patch };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -80,7 +114,7 @@ function sanitizePlan(input, existing) {
   return {
     name: String(b.name != null ? b.name : e.name || '').slice(0, 60) || 'Plan',
     description: String(b.description != null ? b.description : e.description || '').slice(0, 240),
-    price: Math.max(0, Math.round(Number(b.price != null ? b.price : e.price) || 0)), // minor units (cents)
+    price: Math.min(99999999, Math.max(0, Math.round(Number(b.price != null ? b.price : e.price) || 0))), // minor units (cents); clamp to Stripe's max
     interval,
     resources: res, // plans grant quota only — no coins (coins are a free-mode thing)
     features,
@@ -101,8 +135,13 @@ function updatePlan(id, input) {
 }
 function removePlan(id) {
   const p = db.get('plans', id);
-  if (p) db.remove('plans', id);
-  return !!p;
+  if (!p) return false;
+  db.remove('plans', id);
+  // Don't strand members on a now-deleted plan with a phantom resource grant.
+  for (const u of db.all('users')) {
+    if (u.plan === id) cancelPlan(u);
+  }
+  return true;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -156,22 +195,72 @@ function cancelPlan(user) {
 
 /** Claim a price-0 plan instantly (no payment needed). */
 function selectFreePlan(user, planId) {
+  if (cfg().mode === 'free') throw new Error('Billing is disabled.'); // not a self-serve quota grant
   const plan = getPlan(planId);
   if (!plan || plan.active === false) throw new Error('Plan not available.');
   if (plan.price > 0) throw new Error('This plan requires payment.');
+  // Idempotent: re-claiming the same free plan must not reset/oscillate quota.
+  if (user.plan === plan.id && user.planStatus === 'active') return { ok: true, plan: plan.name };
   applyPlan(user, plan, 'active');
   db.log({ type: 'billing', userId: user.id, message: `${user.username} selected the free plan “${plan.name}”` });
   return { ok: true, plan: plan.name };
 }
 
-function startTrial(user, planId) {
+/* ---- Trial anti-abuse ----------------------------------------------------- */
+/** Normalize an email so + addressing and gmail dots can't mint fresh trials. */
+function normEmail(email) {
+  let e = String(email || '').trim().toLowerCase();
+  const at = e.lastIndexOf('@');
+  if (at < 1) return e;
+  let local = e.slice(0, at), domain = e.slice(at + 1);
+  local = local.split('+')[0]; // drop +tag plus-addressing (any provider)
+  if (domain === 'gmail.com' || domain === 'googlemail.com') { local = local.replace(/\./g, ''); domain = 'gmail.com'; }
+  return local && domain ? `${local}@${domain}` : e;
+}
+/** Identity fingerprints a trial is bound to — matching ANY blocks a new trial. */
+function trialFingerprints(user, ip) {
+  const fps = [];
+  const e = normEmail(user.email); if (e) fps.push('email:' + e);
+  if (user.discordId) fps.push('discord:' + user.discordId);
+  const cip = ip ? ipguard.canonicalIp(ip) : ''; if (cip) fps.push('ip:' + cip);
+  return fps;
+}
+
+/**
+ * Start the single free trial. Hardened against abuse:
+ *  - one per account (trialUsed),
+ *  - one per identity ACROSS accounts: normalized email, Discord id, and IP are
+ *    recorded in a persistent `trialClaims` store; any prior match is rejected
+ *    (survives account deletion + re-registration),
+ *  - blocked over VPN/proxy when anti-VPN is enabled (stops IP rotation),
+ *  - restricted to the admin-configured trial plan when one is set,
+ *  - disabled entirely when trialDays <= 0.
+ */
+async function startTrial(user, planId, ctx = {}) {
   const c = cfg();
   if (c.mode !== 'trial') throw new Error('Free trials are not available.');
-  if (user.trialUsed || user.planStatus === 'trialing') throw new Error('You have already used your free trial.');
+  if (c.trialDays <= 0) throw new Error('Free trials are not available.');
+  if (user.trialUsed || user.planStatus === 'trialing' || user.planStatus === 'expired')
+    throw new Error('You have already used your free trial.');
+  if (c.trialPlanId && planId !== c.trialPlanId) throw new Error('That plan is not available for a free trial.');
   const plan = getPlan(planId);
   if (!plan || plan.active === false) throw new Error('Plan not available.');
+
+  // Cross-account identity check (the real anti-abuse).
+  const fps = trialFingerprints(user, ctx.ip);
+  if (fps.length) {
+    const taken = db.all('trialClaims').some((r) => fps.includes(r.fp));
+    if (taken) throw new Error('A free trial has already been claimed from this account, email, or network.');
+  }
+  // Block VPN/proxy IPs (no-op unless the admin enabled anti-VPN). Closes the
+  // "hop to a new IP to mint another trial" hole.
+  const vpn = await ipguard.vpnBlockReason(ctx.ip || '');
+  if (vpn) throw new Error('Free trials are not available over a VPN or proxy.');
+
   const trialEndsAt = new Date(Date.now() + c.trialDays * 86400000).toISOString();
   applyPlan(user, plan, 'trialing', { trialEndsAt, trialUsed: true });
+  for (const fp of fps)
+    db.insert('trialClaims', { id: 'tc_' + crypto.randomBytes(5).toString('hex'), fp, userId: user.id, username: user.username, at: new Date().toISOString() });
   db.log({ type: 'billing', userId: user.id, message: `${user.username} started a ${c.trialDays}-day trial of “${plan.name}”` });
   return { ok: true, trialEndsAt };
 }
@@ -244,11 +333,17 @@ async function confirmCheckout(user, sessionId) {
   if (!sessionId) throw new Error('Missing session id.');
   const s = await stripe('GET', `/checkout/sessions/${encodeURIComponent(sessionId)}`);
   if (s.client_reference_id && s.client_reference_id !== user.id) throw new Error('This checkout belongs to another account.');
-  const paid = s.payment_status === 'paid' || s.status === 'complete';
+  // Only a genuinely-settled payment activates a plan. `status === 'complete'`
+  // can be true while payment_status is 'unpaid' (async/delayed payments), so it
+  // is NOT sufficient on its own.
+  const paid = s.payment_status === 'paid' || s.payment_status === 'no_payment_required';
   if (!paid) return { ok: false, status: s.payment_status || s.status };
+  // Idempotent: a returned session_id can be replayed — don't re-apply / re-log.
+  if (user.lastCheckoutSessionId && user.lastCheckoutSessionId === s.id)
+    return { ok: true, plan: (getPlan(user.plan) || {}).name || null };
   const plan = getPlan(s.metadata && s.metadata.planId);
   if (!plan) throw new Error('Plan not found for this checkout.');
-  applyPlan(user, plan, 'active', { stripeCustomerId: s.customer || user.stripeCustomerId || null, stripeSubId: s.subscription || null });
+  applyPlan(user, plan, 'active', { stripeCustomerId: s.customer || user.stripeCustomerId || null, stripeSubId: s.subscription || null, lastCheckoutSessionId: s.id });
   db.log({ type: 'billing', userId: user.id, message: `${user.username} subscribed to “${plan.name}”` });
   return { ok: true, plan: plan.name };
 }
@@ -277,23 +372,45 @@ function verifyWebhook(rawBody, sigHeader) {
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new Error('Webhook signature mismatch.');
   return JSON.parse(payload);
 }
+// For the initial grant we can trust the session metadata (it links payment to
+// the buyer). For every other (state-changing) event we resolve the user ONLY
+// by stored ownership — subscription id, then customer id — never by caller
+// metadata, so a crafted event can't cancel/flip an account it doesn't own.
 function userByCustomer(customerId, metaUserId) {
   if (metaUserId) { const u = db.get('users', metaUserId); if (u) return u; }
   return customerId ? db.find('users', (u) => u.stripeCustomerId === customerId) : null;
 }
+function userBySubscription(subId, customerId) {
+  if (subId) { const u = db.find('users', (x) => x.stripeSubId === subId); if (u) return u; }
+  return customerId ? db.find('users', (x) => x.stripeCustomerId === customerId) : null;
+}
 function handleWebhook(rawBody, sig) {
   const event = verifyWebhook(rawBody, sig);
+  // Idempotency: process each Stripe event id at most once (defeats replay
+  // within the signature tolerance window and Stripe's own retries/reordering).
+  if (event.id) {
+    if (db.get('stripeEvents', event.id)) return event.type;
+    db.insert('stripeEvents', { id: event.id, type: event.type, at: new Date().toISOString() });
+  }
   const obj = (event.data && event.data.object) || {};
   const meta = obj.metadata || {};
   if (event.type === 'checkout.session.completed') {
     const u = userByCustomer(obj.customer, meta.userId);
     const plan = getPlan(meta.planId);
-    if (u && plan) applyPlan(u, plan, 'active', { stripeCustomerId: obj.customer || null, stripeSubId: obj.subscription || null });
+    if (u && plan && plan.active !== false) applyPlan(u, plan, 'active', { stripeCustomerId: obj.customer || null, stripeSubId: obj.subscription || null });
+  } else if (event.type === 'invoice.payment_succeeded') {
+    // Card recovered after a failure → restore access (was stuck on past_due).
+    const u = userBySubscription(obj.subscription, obj.customer);
+    if (u && u.planStatus === 'past_due') db.update('users', u.id, { planStatus: 'active' });
   } else if (event.type === 'invoice.payment_failed') {
-    const u = userByCustomer(obj.customer);
+    const u = userBySubscription(obj.subscription, obj.customer);
     if (u) db.update('users', u.id, { planStatus: 'past_due' });
+  } else if (event.type === 'customer.subscription.updated') {
+    const u = userBySubscription(obj.id, obj.customer);
+    const plan = getPlan(meta.planId);
+    if (u && plan && plan.active !== false && ['active', 'trialing'].includes(obj.status)) applyPlan(u, plan, 'active');
   } else if (event.type === 'customer.subscription.deleted') {
-    const u = userByCustomer(obj.customer, meta.userId);
+    const u = userBySubscription(obj.id, obj.customer);
     if (u) cancelPlan(u);
   }
   return event.type;
@@ -301,6 +418,7 @@ function handleWebhook(rawBody, sig) {
 
 module.exports = {
   cfg, publicConfig, adminConfig, userPlan, paymentsReady, requiresPlan,
+  isTrialExpired, entitled, reconcile,
   plans, getPlan, createPlan, updatePlan, removePlan,
   applyPlan, cancelPlan, selectFreePlan, startTrial,
   createCheckout, confirmCheckout, verifyWebhook, handleWebhook,
