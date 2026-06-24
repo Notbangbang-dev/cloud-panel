@@ -110,6 +110,11 @@
       if (done) return; done = true;
       link.id = 'cp-appearance';
       if (old && old !== link && old.parentNode) old.remove();
+      // Keep the cascade deterministic: a per-user theme must always sit AFTER
+      // the global theme so it wins for that user. Re-append it to the end so
+      // ordering never depends on when each <link> happened to be inserted.
+      const userLink = document.getElementById('cp-user-theme');
+      if (userLink) document.head.appendChild(userLink);
       if (typeof onLoaded === 'function') { try { onLoaded(); } catch (e) {} }
     };
     link.addEventListener('load', finish);

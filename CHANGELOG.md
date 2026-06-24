@@ -4,6 +4,24 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.7.2] — 2026-06-23
+
+### 🐛 Fixes
+- **Saving a panel theme now actually changes what you see** — even if you have
+  a *personal* theme selected. Root cause: a personal theme (Account →
+  Appearance) is layered on top of the global theme and wins the CSS cascade for
+  that user (by design). So when an admin with a personal theme saved the
+  **global** theme, their own view stayed on their personal theme and the save
+  looked like it did nothing / reverted (the live preview hid this while editing,
+  then revealed the personal theme again on Save).
+  - The Admin → Appearance editor now **temporarily suspends your personal
+    theme** while you're on that tab, so you preview and save against the true
+    global theme. Your personal theme is **restored automatically** when you
+    leave the tab — per-user themes keep working everywhere else.
+  - A warning is shown in the editor when a personal theme is active.
+  - `reloadGlobal()` now re-appends the per-user stylesheet after the global one
+    so the global-vs-personal cascade order is deterministic.
+
 ## [2.7.1] — 2026-06-23
 
 ### 🐛 Fixes

@@ -27,10 +27,29 @@
     if (document.getElementById('cp-appearance-preview') && CP.appearance) CP.appearance.clearPreview();
   }
 
+  /* While editing the GLOBAL panel theme, the admin's own *personal* theme
+     (Account → Appearance) would otherwise sit on top of the cascade and mask
+     every change — so a global Save looks like it does nothing. Suspend the
+     personal theme on entering the Appearance tab and restore it on leaving,
+     so the admin previews and saves against the true global theme. */
+  let _personalThemeSuspended = false;
+  function suspendPersonalTheme() {
+    if (_personalThemeSuspended) return;
+    if (CP.app.user && CP.app.user.themePreset && CP.appearance && CP.appearance.applyUserPreset) {
+      _personalThemeSuspended = true;
+      CP.appearance.applyUserPreset(null);
+    }
+  }
+  function restorePersonalTheme() {
+    if (!_personalThemeSuspended) return;
+    _personalThemeSuspended = false;
+    if (CP.appearance && CP.appearance.applyUserPreset) CP.appearance.applyUserPreset((CP.app.user && CP.app.user.themePreset) || null);
+  }
+
   CP.pages.admin = async function (root, ctx) {
     if (!CP.app.user.admin) { root.appendChild(CP.empty('shield', 'Administrator access required.')); return; }
     ctx.setCrumbs([{ label: 'Admin' }]);
-    ctx.onCleanup(removeAppearancePreview);
+    ctx.onCleanup(() => { removeAppearancePreview(); restorePersonalTheme(); });
 
     let active = ctx.params.tab && SUBS.some((s) => s.id === ctx.params.tab) ? ctx.params.tab : 'overview';
 
@@ -50,6 +69,7 @@
 
     function render() {
       removeAppearancePreview(); // leaving a tab discards an unsaved theme preview
+      restorePersonalTheme();    // leaving Appearance restores the admin's personal theme
       CP.clear(content);
       ({ overview, analytics: analyticsTab, servers, users, nodes, locations, allocations, eggs, databases: databasesTab, settings, achievements: achievementsTab, billing: billingTab, appearance: appearanceTab, login: loginTab }[active])(content);
     }
@@ -1149,11 +1169,14 @@
   }
 
   async function appearanceTab(root) {
+    // Edit/preview the GLOBAL theme without the admin's personal theme masking it.
+    suspendPersonalTheme();
     loading(root);
     let payload;
     try { payload = (await CP.api.adminAppearance()).data; }
     catch (e) { CP.clear(root); return root.appendChild(CP.empty('alert', e.message)); }
     CP.clear(root);
+    const hasPersonalTheme = !!(CP.app.user && CP.app.user.themePreset);
 
     const presets = payload.presets || [];
     const draft = payload.appearance || {};
@@ -1317,6 +1340,7 @@
     /* Layout */
     root.append(
       h('div', { class: 'note', style: { marginBottom: '18px' }, html: `${icon('info', 15)} Changes preview live across the panel. Nothing changes for other users until you <b>Save</b>.` }),
+      hasPersonalTheme ? h('div', { class: 'note', style: { marginBottom: '18px', borderLeftColor: 'var(--amber)', background: 'rgba(210,153,34,0.06)' }, html: `${icon('alert', 15)} You have a <b>personal theme</b> selected under <b>Account → Appearance</b>. It normally overrides the panel theme just for you — it's paused here so you can see your changes. Set it to <b>Panel default</b> in Account to use the panel theme everywhere.` }) : null,
       h('div', { class: 'card' },
         h('h3', { html: `${icon('palette', 16)} Theme presets` }),
         h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 14px' } }, 'Pick a base palette, then fine-tune below.'),
