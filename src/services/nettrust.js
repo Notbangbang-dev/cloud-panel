@@ -145,9 +145,12 @@ async function assertPublicUrl(urlStr, { protocols = ['https:'] } = {}) {
  */
 async function safeFetch(urlStr, options = {}, { protocols = ['https:'], maxRedirects = 5 } = {}) {
   if (typeof fetch !== 'function') throw new Error('global fetch is unavailable (Node 18+ required)');
+  // Default wall-clock timeout so a hostile/slow upstream (slowloris) can't hang
+  // an install or webhook indefinitely. Callers may pass their own options.signal.
+  const signal = options.signal || (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(20000) : undefined);
   let current = (await assertPublicUrl(urlStr, { protocols })).toString();
   for (let hop = 0; ; hop++) {
-    const res = await fetch(current, { ...options, redirect: 'manual' });
+    const res = await fetch(current, { ...options, signal, redirect: 'manual' });
     // undici exposes 3xx + Location when redirect:'manual' (not an opaque redirect).
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get('location');

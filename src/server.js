@@ -25,6 +25,7 @@ const billing = require('./services/billing');
 const consoleWs = require('./ws/console');
 const sftp = require('./sftp/sftpServer');
 const { securityHeaders } = require('./middleware');
+const { log, requestLogger } = require('./log');
 
 db.load();
 isolation.init(); // optional: lock panel internals + enable per-server-user isolation
@@ -51,6 +52,7 @@ app.disable('x-powered-by');
 // IP-based rate limiter can't be bypassed via spoofed X-Forwarded-For headers.
 if (config.trustProxy !== false) app.set('trust proxy', config.trustProxy);
 app.use(securityHeaders);
+app.use('/api', requestLogger()); // structured per-request logging (method/path/status/ms)
 
 // Stripe webhook — needs the RAW body for signature verification, so it must be
 // mounted before the JSON body parser.
@@ -106,7 +108,7 @@ app.get('*', (req, res) => {
 
 // ---- Error handler --------------------------------------------------------
 app.use((err, req, res, next) => {
-  console.error('[http] error:', err.message);
+  log.error('[http]', req.method, req.originalUrl.split('?')[0], '->', err.message);
   if (res.headersSent) return next(err);
   res.status(500).json({ error: 'Internal server error' });
 });

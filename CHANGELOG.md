@@ -4,6 +4,33 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.13.0] — 2026-06-24 — "Insight"
+
+### 📊 Observability
+- **Structured logging** (zero new dependencies): a small leveled logger
+  (`CP_LOG_LEVEL` = debug|info|warn|error, default info; `CP_LOG_JSON=1` for
+  one-JSON-object-per-line). Replaces ad-hoc `console.*` on the hot paths.
+- **Per-request logging**: every API request is logged once on finish with
+  method, path, status and latency (e.g. `GET /api/health 200 1ms`) — at the
+  right level (4xx→warn, 5xx→error). The HTTP error handler now logs through it
+  too.
+
+### 🛡️ More hardening (finishing the audit's safe remainder)
+- **Outbound fetch timeout**: `safeFetch` (installers, modpacks, automation
+  webhooks) now applies a default 20s wall-clock timeout when the caller doesn't
+  pass its own signal, so a hostile/slow upstream can't hang an install forever.
+- **Admin node edits are coerced**: `PATCH /nodes/:id` now coerces the numeric
+  capacity fields (memory/disk/cpu/overallocate) like the create path did, so a
+  non-numeric value can't poison node accounting or the public status-page math.
+
+### ✅ Tests
+- Suite grown to **20 tests** (added logger level-filtering coverage); CI green
+  on Node 18/20/22.
+
+> Scope note: the remaining items to push past this — a **third-party security
+> audit**, a **real multi-node daemon**, and worker-thread offload for heavy zip
+> work — are deliberately tracked as larger follow-ups rather than rushed in.
+
 ## [2.12.0] — 2026-06-24 — "Hardened"
 
 ### 🛡️ Security hardening (from an internal adversarial audit)

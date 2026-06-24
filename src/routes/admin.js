@@ -418,8 +418,16 @@ router.patch('/nodes/:id', (req, res) => {
   const node = db.get('nodes', req.params.id);
   if (!node) return res.status(404).json({ error: 'Node not found' });
   const fields = ['name', 'description', 'locationId', 'fqdn', 'scheme', 'memory', 'disk', 'cpu', 'maintenance', 'memoryOverallocate', 'diskOverallocate'];
+  const numeric = new Set(['memory', 'disk', 'cpu', 'memoryOverallocate', 'diskOverallocate']);
   const patch = {};
-  for (const f of fields) if (req.body[f] !== undefined) patch[f] = req.body[f];
+  for (const f of fields) {
+    if (req.body[f] === undefined) continue;
+    // Coerce numeric capacity fields (the POST path does; PATCH used to store raw
+    // values, which produced NaN in the public status-page totals).
+    if (numeric.has(f)) patch[f] = Math.max(0, Number(req.body[f]) || 0);
+    else if (f === 'maintenance') patch[f] = !!req.body[f];
+    else patch[f] = req.body[f];
+  }
   res.json({ data: serializeNode(db.update('nodes', node.id, patch)) });
 });
 
