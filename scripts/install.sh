@@ -191,6 +191,16 @@ EOF
       echo "CP_OCI=1"
       echo "CP_OCI_RUNTIME=${OCI_RUNTIME}"
     } >> "$APP_DIR/.env"
+  else
+    # No sandbox requested. The panel is secure-by-default and will REFUSE to run
+    # servers unless the operator accepts the risk, so this single-operator
+    # install opts in explicitly (servers run as the panel user — audit C1).
+    # For untrusted/multi-user use, re-run with CP_OCI=1 instead.
+    {
+      echo "# No sandbox: servers run as the panel user (trusted, single-operator only — C1)."
+      echo "# For untrusted/multi-user hosting, set CP_OCI=1 (Docker/Podman) and remove this."
+      echo "CP_ALLOW_UNSANDBOXED=1"
+    } >> "$APP_DIR/.env"
   fi
   chown "$RUN_USER":"$RUN_USER" "$APP_DIR/.env"
   chmod 600 "$APP_DIR/.env"

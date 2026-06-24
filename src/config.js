@@ -123,6 +123,14 @@ const config = {
   serverUid: int(process.env.CP_SERVER_UID, null),
   serverGid: int(process.env.CP_SERVER_GID, null),
 
+  // Secure by default: with NO sandbox active (neither OCI nor CP_SERVER_UID/GID),
+  // a running server executes code as the panel user and can read the JWT secret
+  // / DB (audit C1). So servers REFUSE TO START unless a sandbox is active OR the
+  // operator explicitly accepts the risk here. Set this ONLY for a trusted,
+  // single-operator panel; for any untrusted/multi-user use, enable CP_OCI=1
+  // instead. (Can also be toggled at Admin → Settings: security.allowUnsandboxed.)
+  allowUnsandboxed: bool(process.env.CP_ALLOW_UNSANDBOXED),
+
   // ---- OCI container sandbox (optional; strongest isolation) --------------
   // When enabled, every game/app server runs inside its own OCI container
   // (Docker or Podman) instead of as a host child process. The container is

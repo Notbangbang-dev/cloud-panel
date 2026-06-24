@@ -90,6 +90,7 @@ function update(patch = {}) {
   }
 
   if (!cur.security) cur.security = {};
+  cur.security.allowUnsandboxed = !!cur.security.allowUnsandboxed; // run servers without a sandbox (trusted panels only — audit C1)
   cur.security.force2faAdmins = !!cur.security.force2faAdmins;
   cur.security.singleIp = !!cur.security.singleIp;
   cur.security.antiVpn = !!cur.security.antiVpn;

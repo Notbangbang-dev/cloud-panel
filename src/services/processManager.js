@@ -248,6 +248,15 @@ const manager = {
     }
     const useOci = oci.active();
 
+    // Secure by default (audit C1): a host-process server runs as the panel user
+    // and could read the panel's JWT secret / DB. If we're NOT going through the
+    // OCI sandbox here, require either per-server-user isolation or an explicit
+    // operator opt-in — otherwise refuse to start.
+    if (!useOci) {
+      const blocked = isolation.execBlockReason();
+      if (blocked) return { ok: false, error: blocked };
+    }
+
     const egg = db.get('eggs', server.eggId);
     const dir = volumeDir(server);
     const cmd = resolveStartup(server, egg);

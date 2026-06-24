@@ -4,6 +4,31 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.9.0] — 2026-06-24 — "Bastion"
+
+### 🔐 Secure by default — servers refuse to run unsandboxed (audit C1)
+The panel's #1 risk was that, with no sandbox, a server runs as the panel user
+and can read the JWT secret / DB and forge an admin token. That default is now
+inverted.
+
+- **A server will not start unless it's sandboxed.** Starting a server now
+  requires either the **OCI container sandbox** (`CP_OCI=1`) or **per-server-user
+  isolation** (`CP_SERVER_UID/GID` as root) — both of which prevent server code
+  from reading the panel secret. With neither active, `start()` refuses with a
+  clear message instead of silently running arbitrary code as the panel user.
+- **Explicit opt-out for trusted, single-operator panels:** set
+  `CP_ALLOW_UNSANDBOXED=1` (env) or toggle `security.allowUnsandboxed`
+  (Admin → Settings). This is a conscious, logged risk-acceptance — never use it
+  on a panel with untrusted/self-service users.
+- The boot warning now states the gate, and the VPS installer writes the opt-in
+  flag automatically for a plain single-operator install while preferring
+  `CP_OCI=1` when you request the container sandbox.
+
+> ⚠️ **Action required after updating an existing, non-sandboxed install:** your
+> servers will refuse to start until you either enable a sandbox (recommended:
+> `CP_OCI=1` with Docker/Podman) or, for a trusted single-operator panel, add
+> `CP_ALLOW_UNSANDBOXED=1` to your `.env` and restart.
+
 ## [2.8.1] — 2026-06-24
 
 ### 🐛 Fixes

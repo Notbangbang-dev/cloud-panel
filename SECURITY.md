@@ -21,6 +21,16 @@ as the OS user the panel runs as.** Such code could read the panel's data
 directory (database, JWT secret), other servers' files, and otherwise compromise
 the host.
 
+**Secure by default (since v2.9.0):** because of the above, the panel now
+**refuses to start any server** when no sandbox is active — i.e. unless the OCI
+container sandbox (`CP_OCI=1`) or per-server-user isolation (`CP_SERVER_UID/GID`
+as root) is in effect. A trusted, single-operator panel that accepts the risk
+can opt back in by setting `CP_ALLOW_UNSANDBOXED=1` (or toggling
+`security.allowUnsandboxed` in Admin → Settings). The VPS installer sets this
+flag automatically for a plain (non-OCI) single-operator install, and prefers
+`CP_OCI=1` when you ask for the container sandbox. Never set
+`CP_ALLOW_UNSANDBOXED=1` on a panel with untrusted/self-service users.
+
 Run Cloud Panel with untrusted/self-service users **only** if you add isolation.
 Recommended hardening:
 

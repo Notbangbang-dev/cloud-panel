@@ -39,6 +39,37 @@ function spawnCreds() {
   return active() ? { uid: config.serverUid, gid: config.serverGid } : {};
 }
 
+/** True when SOME real sandbox protects the panel from server code:
+ *  per-server-user isolation (this module) OR the OCI container runtime.
+ *  Both prevent a server process from reading the panel's JWT secret / DB. */
+function sandboxActive() {
+  if (active()) return true;
+  try { return require('./oci').active(); } catch { return false; }
+}
+
+/** Has the operator explicitly accepted running servers WITHOUT a sandbox?
+ *  Via the CP_ALLOW_UNSANDBOXED env flag, or the security.allowUnsandboxed
+ *  admin setting. Either is a conscious, logged opt-in for trusted panels. */
+function unsandboxedAllowed() {
+  if (config.allowUnsandboxed) return true;
+  try {
+    const s = require('../db').settings();
+    return !!(s && s.security && s.security.allowUnsandboxed);
+  } catch { return false; }
+}
+
+/** Secure-by-default gate: may a server execute code right now?
+ *  Returns null when allowed, or a clear operator-facing error string.
+ *  Allowed when a sandbox is active, OR the operator opted into unsandboxed. */
+function execBlockReason() {
+  if (sandboxActive() || unsandboxedAllowed()) return null;
+  return 'Refusing to run a server unsandboxed: server code would run as the panel ' +
+    'user and could read the panel secret/DB (audit C1). Enable the container ' +
+    'sandbox (CP_OCI=1 with Docker/Podman) or per-server-user isolation ' +
+    '(CP_SERVER_UID/GID as root). For a TRUSTED single-operator panel only, set ' +
+    'CP_ALLOW_UNSANDBOXED=1 (or Admin → Settings → security.allowUnsandboxed). See SECURITY.md.';
+}
+
 /** Best-effort chown a single path to the server user. */
 function chown(p) {
   if (!active()) return;
@@ -92,9 +123,12 @@ function warnUnisolated() {
     '[isolation] WARNING: server sandboxing is INACTIVE — game/app servers run as ' +
     'the panel user and (with code-running eggs: Node/Python/.jar) can execute ' +
     'arbitrary code, reading the panel DB / JWT secret and other servers\u2019 files (C1). ' +
+    (unsandboxedAllowed()
+      ? 'Unsandboxed execution is EXPLICITLY ENABLED (CP_ALLOW_UNSANDBOXED / security.allowUnsandboxed) -- servers WILL run; use this only on a trusted single-operator panel. '
+      : 'Secure-by-default: servers will REFUSE TO START until you enable a sandbox, or (trusted single-operator panel only) set CP_ALLOW_UNSANDBOXED=1. ') +
     (registrationOpen
-      ? 'Public registration is ENABLED, so this is reachable by anyone who signs up. '
-      : 'Only allow users you trust until this is fixed. ') +
+      ? 'Public registration is ENABLED, so an open panel is reachable by anyone who signs up. '
+      : '') +
     'Strongly recommended: enable the OCI container sandbox (CP_OCI=1 with ' +
     'Docker/Podman), or per-server-user isolation (CP_SERVER_UID/GID as root). ' +
     'See SECURITY.md (C1).\n' +
@@ -148,4 +182,4 @@ function init() {
   console.log(`[isolation] active — servers run as uid:${config.serverUid} gid:${config.serverGid}`);
 }
 
-module.exports = { active, spawnCreds, chown, chownTree, init };
+module.exports = { active, sandboxActive, unsandboxedAllowed, execBlockReason, spawnCreds, chown, chownTree, init };
