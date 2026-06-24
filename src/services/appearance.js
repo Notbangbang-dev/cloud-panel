@@ -42,6 +42,10 @@ const PRESETS = [
     p: { bg: '#08090c', bg2: '#0c0e13', surface: '#111319', surf2: '#171a22', text: '#f3f5f9', muted: '#9aa1b3', faint: '#646b7e', primary: '#7c83f6', secondary: '#6366f1', accent: '#818cf8', borderRgb: '140,150,182' },
   },
   {
+    id: 'pulse', name: 'Pulse', tag: 'Vivid & alive',
+    p: { bg: '#0a0a0f', bg2: '#0f0f18', surface: '#16161f', surf2: '#1f1f2c', text: '#f5f2fb', muted: '#a99fc0', faint: '#6e6589', primary: '#f472b6', secondary: '#a855f7', accent: '#22d3ee', borderRgb: '150,130,195' },
+  },
+  {
     id: 'nebula', name: 'Nebula', tag: 'The Cloud Panel classic',
     p: { bg: '#070a12', bg2: '#0b0f1a', surface: '#121828', surf2: '#1a2136', text: '#e7ecf6', muted: '#8a97b4', faint: '#5c6788', primary: '#22d3ee', secondary: '#6366f1', accent: '#a855f7', borderRgb: '118,140,200' },
   },

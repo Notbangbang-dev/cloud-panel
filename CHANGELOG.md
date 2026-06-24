@@ -4,6 +4,28 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.7.0] — 2026-06-23 — "Pulse"
+
+### 💀 Skeleton loading states
+- Added a reusable skeleton system (`CP.skeletonServerCard`, `CP.skeletonTile`,
+  `CP.skeletonRows`, `CP.sk`) with a shimmer that mirrors real content shapes,
+  so first paint no longer jumps when data arrives.
+- The **dashboard** now shows skeleton server cards + resource tiles on first
+  load instead of a single spinner. Skeletons appear once (the live 3s refresh
+  is unaffected) and the shimmer respects `prefers-reduced-motion`.
+
+### 🎨 New theme: `Pulse`
+- A vivid, energetic preset — pink → violet → cyan on a deep neutral base —
+  selectable in Admin → Appearance and as a per-user theme. The default remains
+  `Precision`; all existing presets are unchanged.
+
+### 🛠️ Notes
+- Skeleton helpers are generic and ready to drop into other pages (server
+  detail, admin tables) in future passes.
+- A larger architectural direction (moving the front-end to a framework with a
+  component-override "style builder") is tracked separately and not part of
+  this release.
+
 ## [2.6.0] — 2026-06-23 — "Precision"
 
 ### 🎨 Full front-end redesign — "Precision"

@@ -309,6 +309,36 @@
   CP.spinner = (text = 'Loading…') =>
     h('div', { class: 'loading-row' }, h('div', { class: 'spinner' }), text);
 
+  /* ---- Skeletons ---- shimmer placeholders that mirror real content shapes,
+     so first paint feels alive instead of a frozen spinner. All respect
+     prefers-reduced-motion (the shimmer is killed globally in style.css). */
+  CP.sk = (cls = '', style = null) => h('div', { class: 'sk ' + cls, style });
+  /* One placeholder server card matching .srv-card's layout. */
+  CP.skeletonServerCard = () =>
+    h('div', { class: 'card srv-card sk-card' },
+      h('div', { class: 'top' },
+        CP.sk('sk-glyph'),
+        h('div', { class: 'title', style: { display: 'grid', gap: '8px', flex: '1' } },
+          CP.sk('sk-line', { width: '55%' }),
+          CP.sk('sk-line', { width: '34%', height: '10px' })),
+        CP.sk('sk-pill')),
+      h('div', { class: 'bars', style: { marginTop: '16px', display: 'grid', gap: '14px' } },
+        CP.sk('sk-bar'), CP.sk('sk-bar'), CP.sk('sk-bar')),
+      h('div', { style: { marginTop: '16px', display: 'flex', gap: '10px' } },
+        CP.sk('sk-chip'), CP.sk('sk-chip')));
+  /* One placeholder stat/resource tile matching .tile. */
+  CP.skeletonTile = () =>
+    h('div', { class: 'card tile' },
+      CP.sk('sk-line', { width: '45%', height: '11px' }),
+      CP.sk('sk-line', { width: '70%', height: '24px', marginTop: '6px' }));
+  /* N placeholder table rows for table cards. */
+  CP.skeletonRows = (n = 5, cols = 3) =>
+    h('div', { class: 'sk-rows' },
+      ...Array.from({ length: n }, () =>
+        h('div', { class: 'sk-row' },
+          ...Array.from({ length: cols }, (_, i) =>
+            CP.sk('sk-line', { width: i === 0 ? '40%' : (28 - i * 4) + '%' })))));
+
   CP.empty = (icon, text) =>
     h('div', { class: 'empty' }, h('div', { html: CP.icon(icon, 46) }), h('div', {}, text));
 })();

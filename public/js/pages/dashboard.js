@@ -190,10 +190,11 @@
 
     const resPanel = h('div', { class: 'grid stat-grid', style: { marginBottom: '22px' } });
     root.appendChild(resPanel);
+    for (let i = 0; i < 6; i++) resPanel.appendChild(CP.skeletonTile());
 
     const grid = h('div', { class: 'grid cards' });
-    const loader = CP.spinner('Loading your servers…');
-    root.append(loader, grid);
+    root.appendChild(grid);
+    for (let i = 0; i < 6; i++) grid.appendChild(CP.skeletonServerCard());
 
     async function loadResources() {
       try {
@@ -207,7 +208,6 @@
     async function refresh() {
       try {
         servers = (await CP.api.get('/servers')).data;
-        loader.remove();
         CP.clear(grid);
         if (!servers.length) {
           grid.appendChild(h('div', { class: 'empty' },
@@ -218,7 +218,7 @@
         }
         servers.forEach((s) => grid.appendChild(card(s, refresh)));
       } catch (err) {
-        loader.remove(); CP.clear(grid);
+        CP.clear(grid);
         grid.appendChild(CP.empty('alert', err.message));
       }
     }
