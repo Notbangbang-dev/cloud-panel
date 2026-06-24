@@ -98,49 +98,64 @@ async function restore(server, backupId) {
   const src = backupFile(server.id, backupId);
   if (!fs.existsSync(src)) throw new Error('Backup file is missing on disk');
   const zip = new AdmZip(src);
+  const root = files.rootFor(server);
 
   // Refresh the quota baseline accurately (off the event loop), then size budget.
   await files.diskUsageAsync(server);
   const budget = Math.min(files.remainingBytes(server), 8 * 1024 * 1024 * 1024); // quota + anti zip-bomb
 
-  // ---- Pass 1: VALIDATE the whole archive before touching the live volume ----
-  // Resolve every target (zip-slip safe), bound the file count, and reject up
-  // front if the DECLARED uncompressed total exceeds the budget. This is the fix
-  // for the half-overwrite bug: previously the quota check ran mid-write, so a
-  // backup that exceeded quota would leave the volume partially overwritten with
-  // no rollback. Now a quota failure aborts before a single byte is written.
+  // ---- Pass 1: VALIDATE every entry — NO writes -----------------------------
+  // Resolve each target (zip-slip safe), bound the file count, and reject up
+  // front if the DECLARED uncompressed total already exceeds the budget. `safeRel`
+  // is derived from the RESOLVED path (not the raw entry name) so it can't escape
+  // the staging dir either.
   const plan = [];
   let declaredTotal = 0;
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory) continue;
-    let target;
-    try { target = files.resolve(server, '/' + entry.entryName); } catch { continue; } // skip zip-slip entries
+    let finalPath;
+    try { finalPath = files.resolve(server, '/' + entry.entryName); } catch { continue; } // skip zip-slip entries
+    const safeRel = path.relative(root, finalPath);
+    if (!safeRel || safeRel === '.') continue;
     declaredTotal += (entry.header && entry.header.size) || 0;
     if (declaredTotal > budget) {
       throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' });
     }
     if (plan.length >= 20000) throw new Error('Backup contains too many files');
-    plan.push({ entry, target });
+    plan.push({ entry, finalPath, safeRel });
   }
 
-  // ---- Pass 2: write the validated set --------------------------------------
+  // ---- Pass 2: extract to a STAGING dir, validate ACTUAL sizes, then commit --
+  // Inflate every entry into a staging dir on the SAME filesystem, bounding the
+  // REAL (inflated) total as we go. The live volume is not touched until the
+  // whole archive is staged and within budget — so a crafted zip that lies about
+  // its header sizes, or an inflation/IO error, can no longer half-overwrite real
+  // files (the old in-place loop could). Commit is then a fast same-fs rename per
+  // file; the staging dir is always cleaned up in `finally`.
+  const stageDir = path.join(config.volumesDir, `.restore-${server.id}-${db.uid('rst')}`);
   let restored = 0;
   let written = 0;
   try {
-    for (const { entry, target } of plan) {
-      const data = entry.getData();
+    await fsp.mkdir(stageDir, { recursive: true });
+    for (const item of plan) {
+      const data = item.entry.getData();
       written += data.length;
-      // Defensive: the archive header could under-report sizes (a crafted zip).
-      // Still bound the actual inflated total so a lying backup can't blow quota.
-      if (written > budget) {
+      if (written > budget) { // a lying header is caught HERE — before any live write
         throw Object.assign(new Error('Backup contents exceed the disk quota for this server'), { code: 'EDQUOT' });
       }
-      await fsp.mkdir(path.dirname(target), { recursive: true });
-      await fsp.writeFile(target, data);
-      isolation.chown(target);
+      item.stagePath = path.join(stageDir, item.safeRel);
+      await fsp.mkdir(path.dirname(item.stagePath), { recursive: true });
+      await fsp.writeFile(item.stagePath, data);
+    }
+    // Commit: everything is validated and on disk — move it onto the live volume.
+    for (const item of plan) {
+      await fsp.mkdir(path.dirname(item.finalPath), { recursive: true });
+      await fsp.rename(item.stagePath, item.finalPath);
+      isolation.chown(item.finalPath);
       restored++;
     }
   } finally {
+    try { await fsp.rm(stageDir, { recursive: true, force: true }); } catch {}
     files.invalidateDisk(server.id);
   }
   return { restored };

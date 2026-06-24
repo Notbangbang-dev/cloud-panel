@@ -4,6 +4,30 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.16.1] — 2026-06-24 — "Ballast, for real"
+
+A follow-up independent audit found that the v2.16.0 "atomic restore" claim was
+**overstated** — so this patch makes it true rather than leaving a wrong claim
+in the changelog.
+
+### 💾 Restore is now genuinely staged before it touches your files
+- v2.16.0 validated the archive's *declared* sizes before writing, which fixed
+  the honest-over-quota case — but a **crafted backup that lied about its entry
+  sizes** (or an I/O error mid-write) could still half-overwrite the live volume,
+  because pass 2 wrote file-by-file directly onto it.
+- `backups.restore` now **extracts the whole archive into a staging directory on
+  the same filesystem, bounding the REAL (inflated) size as it goes**, and only
+  once everything is staged and within budget does it commit onto the live volume
+  (a fast same-filesystem move per file). A lying header or an inflation error is
+  caught in staging — **before a single live file is changed.** (Regression tests
+  cover both the rejection and the happy-path commit.)
+
+### ✅ Tests
+- 24 tests (added a happy-path staging-restore test); CI green on Node 18/20/22.
+
+> Honesty note: the v2.16.0 entry below said restore "can no longer half-overwrite
+> a volume." That was true only for honest backups. It's accurate now.
+
 ## [2.16.0] — 2026-06-24 — "Ballast"
 
 Fixes the concrete issues a fresh independent review found — including one that

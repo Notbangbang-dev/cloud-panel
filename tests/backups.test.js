@@ -40,3 +40,20 @@ test('restore validates BEFORE writing — a quota-busting backup leaves the vol
 
   db.remove('backups', rec.id);
 });
+
+test('restore brings backed-up files back via the staging commit (happy path)', async () => {
+  const server = { id: 'restore_ok_' + Date.now(), name: 'r2', limits: {} };
+  const root = files.rootFor(server);
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(path.join(root, 'config.yml'), 'motd: hi');
+
+  const rec = await backups.create(server, { name: 'ok' });
+  fs.rmSync(path.join(root, 'config.yml'), { force: true });
+  assert.equal(fs.existsSync(path.join(root, 'config.yml')), false, 'removed before restore');
+
+  const r = await backups.restore(server, rec.id);
+  assert.ok(r.restored >= 1, 'restored at least one file');
+  assert.equal(fs.readFileSync(path.join(root, 'config.yml'), 'utf8'), 'motd: hi', 'content restored intact');
+
+  db.remove('backups', rec.id);
+});
