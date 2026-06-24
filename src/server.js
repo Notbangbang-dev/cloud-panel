@@ -72,12 +72,24 @@ app.get('/api/health', (req, res) => {
   let sandbox;
   try { const s = oci.status(); sandbox = { mode: s.active ? 'oci' : 'host', runtime: s.runtime, active: s.active }; }
   catch { sandbox = { mode: 'host' }; }
+  let servers = null;
+  try {
+    const all = db.all('servers');
+    servers = { total: all.length, running: all.filter((s) => s.status === 'running').length };
+  } catch { /* db not ready */ }
   res.json({
     status: 'ok',
     brand,
     ports: { web: config.webPort, sftp: config.sftpPort },
     store: db.backend ? db.backend.kind : 'unknown',
     sandbox,
+    // Panel self-health (basic observability without external deps).
+    process: {
+      node: process.version,
+      uptimeSec: Math.round(process.uptime()),
+      memoryMb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
+    },
+    servers,
     time: new Date().toISOString(),
   });
 });

@@ -50,6 +50,9 @@ if [ "${CP_UPD_STAGE:-1}" = "2" ]; then
   chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
   say "Installing dependencies …"
   sudo -u "$RUN_USER" bash -lc "cd '$APP_DIR' && npm install --omit=dev --no-fund --no-audit"
+  say "Running tests before restart …"
+  sudo -u "$RUN_USER" bash -lc "cd '$APP_DIR' && npm test" \
+    || die "Update aborted: tests FAILED — the panel was NOT restarted (still running the previous version). Investigate before retrying."
   ensure_link
   systemctl restart "$SERVICE"
   rm -rf "$(dirname "$SRC")" 2>/dev/null || true
@@ -67,6 +70,9 @@ say "Updating Cloud Panel at ${APP_DIR}"
 if [ -d "$APP_DIR/.git" ]; then
   sudo -u "$RUN_USER" git -C "$APP_DIR" pull --ff-only
   sudo -u "$RUN_USER" bash -lc "cd '$APP_DIR' && npm install --omit=dev --no-fund --no-audit"
+  say "Running tests before restart …"
+  sudo -u "$RUN_USER" bash -lc "cd '$APP_DIR' && npm test" \
+    || die "Update aborted: tests FAILED — the panel was NOT restarted (still running the previous version). Investigate before retrying."
   ensure_link
   systemctl restart "$SERVICE"
   ok "Cloud Panel updated and restarted."

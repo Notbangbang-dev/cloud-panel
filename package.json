@@ -1,6 +1,6 @@
 {
   "name": "cloud-panel",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "private": true,
   "description": "Cloud Panel — an insane Pterodactyl-style game server management panel (PufferPanel ports: web 8080, SFTP 5657).",
   "main": "src/server.js",
@@ -10,7 +10,8 @@
     "dev": "node --watch src/server.js",
     "setup": "node src/scripts/setup.js",
     "user": "node src/scripts/user.js",
-    "reset": "node src/scripts/reset.js"
+    "reset": "node src/scripts/reset.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"

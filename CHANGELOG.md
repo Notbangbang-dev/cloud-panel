@@ -4,6 +4,29 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.11.0] — 2026-06-24 — "Foundation"
+
+### ✅ Automated tests + CI (the panel finally has a safety net)
+The standing "zero tests, zero CI" gap is closed.
+
+- **Test suite** (`npm test`, zero new dependencies — Node's built-in
+  `node:test`): 15 tests covering the load-bearing, safety-critical code —
+  auth (token sign/verify/tamper, password hashing), billing (trial expiry,
+  `requiresPlan` gating, reconcile downgrade), the secure-by-default sandbox
+  gate, file-path traversal containment, IP canonicalization, settings
+  sanitization, and boot-state reconciliation. Tests run against a throwaway
+  data dir, never touching real panel data.
+- **CI** (GitHub Actions): every push/PR runs a syntax check + the suite on
+  Node 18, 20 and 22.
+- **Safer updates:** `cloud-panel-update` now **runs the tests after pulling and
+  refuses to restart if they fail** — a bad update can no longer take your panel
+  down; it stays on the previous version until you investigate.
+
+### 📈 Observability
+- `/api/health` now also reports basic panel self-health: Node version, process
+  uptime, RSS memory, the store backend, sandbox mode, and live server counts —
+  enough to monitor the panel itself, not just per-server graphs.
+
 ## [2.10.0] — 2026-06-24 — "Resilience"
 
 ### 🔁 The panel now survives restarts and crashes

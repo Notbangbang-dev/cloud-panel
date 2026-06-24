@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # Skip optional native deps (better-sqlite3): the test suite runs against a
+      # throwaway data dir and the JSON store fallback, so no build tools needed.
+      - run: npm ci --omit=optional --no-audit --no-fund
+      - name: Syntax check
+        run: |
+          set -e
+          find src -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Run tests
+        run: npm test
