@@ -104,11 +104,17 @@ function createServer({ name, ownerId, eggId, nodeId, allocationId, memory, cpu,
   });
 
   db.update('allocations', alloc.id, { serverId: server.id, primary: true });
+  // Multi-node: push the config to the right node's daemon (no-op for the local
+  // node), then provision THERE. Dispatch routes local→pm, remote→the daemon.
   // Provisioning marks the server 'install_failed' on error (see processManager);
   // log any unexpected rejection too instead of swallowing it.
-  pm.provision(server, { trigger: 'install' }).catch((e) => {
-    db.log({ type: 'install', serverId: server.id, message: `Install error: ${(e && e.message) || e}` });
-  });
+  const dispatch = require('./nodeDispatch');
+  Promise.resolve()
+    .then(() => dispatch.pushServer(server))
+    .then(() => dispatch.provision(server, { trigger: 'install' }))
+    .catch((e) => {
+      db.log({ type: 'install', serverId: server.id, message: `Install error: ${(e && e.message) || e}` });
+    });
   try { require('./players').watch(server.id); } catch {}
   return server;
 }

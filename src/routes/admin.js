@@ -9,6 +9,8 @@ const auth = require('../auth');
 const config = require('../config');
 const pm = require('../services/processManager');
 const firewall = require('../services/firewall');
+const nodeToken = require('../services/nodeToken');
+const dispatch = require('../services/nodeDispatch');
 const users = require('../services/users');
 const settings = require('../services/settings');
 const appearance = require('../services/appearance');
@@ -389,6 +391,17 @@ router.get('/nodes', (req, res) => {
   res.json({ data: db.all('nodes').map(serializeNode) });
 });
 
+// Build the one-command daemon installer line for a node (shown once at creation
+// / token rotation). Uses the exact URL the admin is browsing as the panel URL.
+function panelBaseUrl(req) {
+  return `${req.protocol}://${req.get('host')}`.replace(/\/+$/, '');
+}
+function daemonInstallCommand(req, node) {
+  const base = panelBaseUrl(req);
+  return `curl -fsSL ${base}/scripts/install-daemon.sh | sudo bash -s -- ` +
+    `--panel ${base} --node ${node.id} --token ${node.daemonToken} --port ${node.daemonPort}`;
+}
+
 router.post('/nodes', (req, res) => {
   const b = req.body || {};
   if (!b.name || !b.locationId)
@@ -400,26 +413,38 @@ router.post('/nodes', (req, res) => {
     description: b.description || '',
     locationId: b.locationId,
     fqdn: b.fqdn || config.publicHost,
-    scheme: b.scheme || 'http',
+    scheme: b.scheme === 'https' ? 'https' : 'http',
     memory: Number(b.memory) || 8192,
     memoryOverallocate: Number(b.memoryOverallocate) || 0,
     disk: Number(b.disk) || 51200,
     diskOverallocate: Number(b.diskOverallocate) || 0,
     cpu: Number(b.cpu) || 400,
-    daemonPort: config.webPort,
-    sftpPort: config.sftpPort,
+    daemonPort: Number(b.daemonPort) || config.webPort,
+    sftpPort: Number(b.sftpPort) || config.sftpPort,
+    daemonToken: nodeToken.generateNodeToken(), // per-node secret for the daemon
+    status: 'unknown',
     maintenance: false,
     createdAt: new Date().toISOString(),
   });
+  dispatch.markLocalNode(); // re-resolve which node is local (the new one may be a remote)
   db.log({ type: 'admin', userId: req.user.id, message: `Created node ${node.name}` });
-  res.status(201).json({ data: serializeNode(node) });
+  // Return the token + install command ONCE (Pterodactyl "configure token" pattern).
+  res.status(201).json({ data: serializeNode(node), daemonToken: node.daemonToken, installCommand: daemonInstallCommand(req, node) });
+});
+
+// Rotate a node's daemon token (invalidates the old daemon until re-run).
+router.post('/nodes/:id/rotate-token', (req, res) => {
+  const node = db.get('nodes', req.params.id);
+  if (!node) return res.status(404).json({ error: 'Node not found' });
+  const updated = db.update('nodes', node.id, { daemonToken: nodeToken.generateNodeToken(), status: 'unknown' });
+  res.json({ data: serializeNode(updated), daemonToken: updated.daemonToken, installCommand: daemonInstallCommand(req, updated) });
 });
 
 router.patch('/nodes/:id', (req, res) => {
   const node = db.get('nodes', req.params.id);
   if (!node) return res.status(404).json({ error: 'Node not found' });
-  const fields = ['name', 'description', 'locationId', 'fqdn', 'scheme', 'memory', 'disk', 'cpu', 'maintenance', 'memoryOverallocate', 'diskOverallocate'];
-  const numeric = new Set(['memory', 'disk', 'cpu', 'memoryOverallocate', 'diskOverallocate']);
+  const fields = ['name', 'description', 'locationId', 'fqdn', 'scheme', 'memory', 'disk', 'cpu', 'maintenance', 'memoryOverallocate', 'diskOverallocate', 'daemonPort', 'sftpPort'];
+  const numeric = new Set(['memory', 'disk', 'cpu', 'memoryOverallocate', 'diskOverallocate', 'daemonPort', 'sftpPort']);
   const patch = {};
   for (const f of fields) {
     if (req.body[f] === undefined) continue;
@@ -646,8 +671,12 @@ router.post('/servers', (req, res) => {
   });
   db.update('allocations', alloc.id, { serverId: server.id, primary: true });
   db.log({ type: 'admin', userId: req.user.id, message: `Created server ${server.name}` });
-  // Auto-provision real server files when the egg has an installer (Paper/Vanilla).
-  pm.provision(server, { trigger: 'install' }).catch(() => {});
+  // Multi-node: push config to the target node's daemon (no-op for the local
+  // node) and provision THERE. Dispatch routes local→pm, remote→the daemon.
+  Promise.resolve()
+    .then(() => dispatch.pushServer(server))
+    .then(() => dispatch.provision(server, { trigger: 'install' }))
+    .catch((e) => db.log({ type: 'install', serverId: server.id, message: `Install error: ${(e && e.message) || e}` }));
   try { require('../services/players').watch(server.id); } catch {}
   res.status(201).json({ data: serializeServer(server, { detail: true }) });
 });
@@ -669,7 +698,8 @@ router.patch('/servers/:id', (req, res) => {
 router.delete('/servers/:id', async (req, res) => {
   const server = db.get('servers', req.params.id);
   if (!server) return res.status(404).json({ error: 'Server not found' });
-  await pm.kill(server);
+  if (dispatch.isLocalServer(server)) await pm.kill(server);
+  else { try { await dispatch.removeServer(server); } catch {} } // kill + wipe on the remote node
   [server.allocationId, ...(server.additionalAllocationIds || [])].forEach((id) => {
     if (db.get('allocations', id)) db.update('allocations', id, { serverId: null, primary: false });
   });

@@ -3,6 +3,7 @@
 const db = require('../db');
 const pm = require('../services/processManager');
 const files = require('../services/files');
+const dispatch = require('../services/nodeDispatch');
 
 /**
  * Granular per-server permissions for subusers. Owners and admins implicitly
@@ -71,10 +72,12 @@ function serializeServer(server, { detail = false, user = null } = {}) {
   const egg = db.get('eggs', server.eggId);
   const owner = db.get('users', server.ownerId);
   const primary = db.get('allocations', server.allocationId);
-  const state = pm.state(server.id);
+  // Dispatch shim: local → pm.state (today's path); remote → cached daemon state.
+  const state = dispatch.state(server);
   const resources = {
     ...state.stats,
-    disk: files.diskUsage(server),
+    // Local disk is measured live; remote disk comes from the daemon's stats.
+    disk: dispatch.isLocalServer(server) ? files.diskUsage(server) : (state.stats.disk || 0),
     diskLimit: (server.limits?.disk || 0) * 1024 * 1024,
   };
 
@@ -134,8 +137,20 @@ function serializeNode(node) {
   const usedMemory = servers.reduce((sum, s) => sum + (s.limits?.memory || 0), 0);
   const usedDisk = servers.reduce((sum, s) => sum + (s.limits?.disk || 0), 0);
   const allocations = db.filter('allocations', (a) => a.nodeId === node.id);
+  // Never leak the node's daemon secret in normal serialization.
+  const { daemonToken, ...safe } = node;
+  // A node with no daemon token is the local/unconfigured node (servers run on
+  // the panel host). A tokened node is remote: online while we hear heartbeats,
+  // else stale → offline.
+  let status;
+  if (node.isLocal || !node.daemonToken) status = 'local';
+  else if (node.lastSeen && Date.now() - new Date(node.lastSeen).getTime() > 45000) status = 'offline';
+  else status = node.status || 'unknown';
   return {
-    ...node,
+    ...safe,
+    hasToken: !!daemonToken,
+    status,
+    daemonUrl: `${node.scheme === 'https' ? 'https' : 'http'}://${node.fqdn}:${node.daemonPort}`,
     location: loc ? { id: loc.id, short: loc.short, long: loc.long } : null,
     serverCount: servers.length,
     allocationCount: allocations.length,

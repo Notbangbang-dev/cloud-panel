@@ -3,8 +3,8 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
-const pm = require('../services/processManager');
-const files = require('../services/files');
+const dispatch = require('../services/nodeDispatch'); // local→pm/files, remote→node daemon
+const files = dispatch.files; // same signatures as services/files
 const javaSvc = require('../services/java');
 const settings = require('../services/settings');
 const serversSvc = require('../services/servers');
@@ -413,7 +413,7 @@ router.get('/servers/:id', loadServer, (req, res) => {
 });
 
 router.get('/servers/:id/resources', loadServer, requirePerm('control.console'), (req, res) => {
-  res.json({ data: pm.state(req.server.id) });
+  res.json({ data: dispatch.state(req.server) });
 });
 
 // ---- Power & console ------------------------------------------------------
@@ -424,9 +424,9 @@ router.post('/servers/:id/power', loadServer, requirePerm('control.power'), asyn
     return res.status(400).json({ error: 'Invalid power action' });
   // "Crash Survivor": reviving a server that's currently crashed.
   if (action === 'start' || action === 'restart') {
-    try { if (pm.state(req.server.id).status === 'crashed') achievements.bump(db.get('users', req.user.id), 'crashes'); } catch {}
+    try { if (dispatch.state(req.server).status === 'crashed') achievements.bump(db.get('users', req.user.id), 'crashes'); } catch {}
   }
-  const result = await pm.power(req.server, action);
+  const result = await dispatch.power(req.server, action);
   if (!result.ok) return res.status(409).json(result);
   res.json({ ok: true, action });
 });
@@ -451,23 +451,23 @@ router.put('/servers/:id/console', loadServer, requirePerm('control.console'), (
 });
 
 router.post('/servers/:id/reinstall', loadServer, requireOwner, (req, res) => {
-  if (pm.isInstalling(req.server.id))
+  if (dispatch.isInstalling(req.server))
     return res.status(409).json({ error: 'Server is already installing' });
   // Kick off in the background; progress streams to the console.
-  pm.provision(req.server, { trigger: 'reinstall' }).catch(() => {});
+  dispatch.provision(req.server, { trigger: 'reinstall' }).catch(() => {});
   res.status(202).json({ ok: true });
 });
 
-router.post('/servers/:id/command', loadServer, requirePerm('control.command'), (req, res) => {
+router.post('/servers/:id/command', loadServer, requirePerm('control.command'), async (req, res) => {
   const command = (req.body && req.body.command) || '';
   if (!command.trim()) return res.status(400).json({ error: 'Command is required' });
-  const result = pm.command(req.server.id, command);
+  const result = await dispatch.command(req.server, command);
   if (!result.ok) return res.status(409).json(result);
   res.json({ ok: true });
 });
 
-router.get('/servers/:id/logs', loadServer, requirePerm('control.console'), (req, res) => {
-  res.json({ data: pm.recentLogs(req.server.id) });
+router.get('/servers/:id/logs', loadServer, requirePerm('control.console'), async (req, res) => {
+  res.json({ data: await dispatch.recentLogs(req.server) });
 });
 
 // ---- Files ----------------------------------------------------------------

@@ -4,6 +4,44 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.21.0] — 2026-06-25 — "Constellation"
+
+### 🌐 Real multi-node — run servers across multiple VPSes (Pterodactyl-style)
+Cloud Panel is no longer single-node. You can now add **remote node daemons** and
+the panel orchestrates servers across them via Docker — the Panel ↔ Wings model.
+
+- **One codebase, two roles.** The same app runs as the **panel** (control plane,
+  default) or a **daemon** (`CP_ROLE=daemon`, `src/daemon.js`) on each node VPS.
+  The daemon reuses the panel's own runtime (processManager / oci / files /
+  installers) to run servers in Docker, driven over an authenticated HTTP+WS API.
+- **Add a node in seconds.** Admin → Nodes → Create node generates a **per-node
+  token** and a one-line installer: `curl <panel>/scripts/install-daemon.sh | sudo
+  bash -s -- --panel … --node … --token …` (installs Node + Docker + a systemd
+  unit). Nodes show **online/offline + last-seen** via heartbeat.
+- **Everything dispatches to the right node.** Create → push config → install →
+  start/stop/restart/kill, **live console + stats + commands** (WebSocket proxied
+  panel↔daemon↔browser), and **file browse/read/write/mkdir/rename/delete** all
+  work on remote nodes. Auth is a short-lived JWT signed with each node's own
+  secret (a leak compromises only that node).
+- **100% backward-compatible.** Existing installs are simply "the local node" —
+  every server stays local and behaves exactly as before (the dispatch shim is a
+  passthrough to processManager for local servers).
+- **New:** `src/daemon.js`, `src/routes/daemon.js`, `src/routes/remote.js`,
+  `src/services/{nodeToken,nodeClient,nodeDispatch}.js`, `scripts/install-daemon.sh`.
+
+### ✅ Tests & verification
+- 52 tests (added nodeToken / nodeClient / nodeDispatch suites). **Verified the
+  full protocol end-to-end on one machine** (panel + a daemon on localhost): node
+  registration + heartbeat → create a remote server → start → live console + a
+  console command round-trip → stats → file write/read on the remote node.
+
+> Honest scope: this v1 is the genuine Pterodactyl core loop and is fully real,
+> but a **true multi-VPS Docker run can only be fully validated on real second
+> hardware** — treat it as new/beta until you've run it on your own node.
+> **Deferred follow-ups:** SFTP to remote nodes (v1 SFTP is local-node-only),
+> backups to/from remote, server transfers between nodes, TLS-cert automation, and
+> reconnection/retry hardening.
+
 ## [2.20.2] — 2026-06-25 — "Plain Truth"
 
 ### 📣 Single-node scope stated plainly on the site

@@ -273,6 +273,13 @@ const db = {
   load() {
     if (!backend) backend = selectBackend();
     ensureDirs();
+    // Daemon role: this DB is a thin local store of the server/egg/allocation rows
+    // the panel pushes — NOT a panel. Skip seeding panel infrastructure, the egg
+    // catalog, settings and user migrations entirely.
+    if (config.role === 'daemon') {
+      migrateServers();
+      return db;
+    }
     if (backend.count('nodes') === 0) {
       seedInfra(); // infrastructure only — no default users/servers
       console.log('[db] seeded infrastructure (no default users)');

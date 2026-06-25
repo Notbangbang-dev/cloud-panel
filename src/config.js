@@ -137,6 +137,16 @@ const config = {
   // instead. (Can also be toggled at Admin → Settings: security.allowUnsandboxed.)
   allowUnsandboxed: bool(process.env.CP_ALLOW_UNSANDBOXED),
 
+  // ---- Multi-node (Panel ↔ Daemon) ----------------------------------------
+  // Role: 'panel' (control plane, default) or 'daemon' (a per-VPS agent that runs
+  // servers in Docker and is driven by the panel over an authenticated API).
+  role: (process.env.CP_ROLE || 'panel').trim().toLowerCase() === 'daemon' ? 'daemon' : 'panel',
+  // Daemon-only: which node this daemon IS, the panel it reports to, and the
+  // per-node shared secret the panel signs its requests with (CP_DAEMON_TOKEN).
+  nodeId: (process.env.CP_NODE_ID || '').trim() || null,
+  panelUrl: (process.env.CP_PANEL_URL || '').trim().replace(/\/+$/, '') || null,
+  daemonToken: (process.env.CP_DAEMON_TOKEN || '').trim() || null,
+
   // ---- OCI container sandbox (optional; strongest isolation) --------------
   // When enabled, every game/app server runs inside its own OCI container
   // (Docker or Podman) instead of as a host child process. The container is
@@ -149,7 +159,13 @@ const config = {
   oci: {
     // Require containers for every server. When on but the runtime is missing,
     // starts fail loudly (we never silently fall back to host processes).
-    enabled: bool(process.env.CP_OCI),
+    // In daemon role, containers are REQUIRED by default (the node host must be
+    // protected from server code) unless the operator explicitly opts out with
+    // CP_ALLOW_UNSANDBOXED=1 (trusted single-operator / dev only).
+    enabled:
+      bool(process.env.CP_OCI) ||
+      ((process.env.CP_ROLE || '').trim().toLowerCase() === 'daemon' &&
+        !bool(process.env.CP_ALLOW_UNSANDBOXED)),
     // Container engine CLI: "docker" (default) or "podman" (drop-in, rootless-capable).
     runtime: (process.env.CP_OCI_RUNTIME || 'docker').trim(),
     // Fallback image when an egg has no `docker` image set (rare; all built-in eggs do).

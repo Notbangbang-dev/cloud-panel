@@ -1,12 +1,13 @@
 {
   "name": "cloud-panel",
-  "version": "2.20.2",
+  "version": "2.21.0",
   "private": true,
   "description": "Cloud Panel — a self-hostable, single-node game server management panel with a clean, modern UX (ports: web 8080, SFTP 5657).",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
+    "daemon": "node src/daemon.js",
     "dev": "node --watch src/server.js",
     "setup": "node src/scripts/setup.js",
     "user": "node src/scripts/user.js",

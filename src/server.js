@@ -29,14 +29,18 @@ const { securityHeaders } = require('./middleware');
 const { log, requestLogger } = require('./log');
 
 db.load();
+require('./services/nodeDispatch').markLocalNode(); // mark which node is this machine (multi-node)
 isolation.init(); // optional: lock panel internals + enable per-server-user isolation
 oci.init(); // optional: run servers in OCI containers (CP_OCI=1); warns if required but unavailable
 firewall.ensureDefaults().catch(() => {}); // best-effort: open the default port range in ufw
 // Reliability: the runtime map is empty on boot, so clear stale 'running' rows
 // and resume servers that were running before shutdown (unless autoStart is off).
 try {
+  const dispatch = require('./services/nodeDispatch');
   const wasRunning = pm.reconcile();
-  const resume = wasRunning.filter((s) => s.autoStart !== false && !s.suspended);
+  // Only resume LOCAL servers here — remote servers are reconciled/resumed by
+  // their own node's daemon on its boot (avoids the panel spawning them locally).
+  const resume = wasRunning.filter((s) => s.autoStart !== false && !s.suspended && dispatch.isLocalServer(s));
   if (resume.length) console.log(`[boot] resuming ${resume.length} server(s) that were running before shutdown`);
   for (const s of resume) {
     const res = pm.start(s);
@@ -93,10 +97,17 @@ app.use('/api/setup', setupRoutes); // public — must be before the authed clie
 app.use('/api', appearanceRoutes); // public theme CSS/JSON — before the authed client router
 app.use('/api', downloadRoutes); // public, ticket-authed downloads — before the authed client router
 app.use('/api', statusRoutes); // public, read-only status pages — before the authed client router
+app.use('/api/remote', require('./routes/remote')); // public, node-token-authed daemon→panel (heartbeats)
 app.use('/api', clientRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Endpoint not found' }));
+
+// Public: serve the node-daemon installer script so the admin's one-line
+// `curl <panel>/scripts/install-daemon.sh | sudo bash` command works.
+app.get('/scripts/install-daemon.sh', (req, res) => {
+  res.type('text/x-shellscript').sendFile(path.join(config.root, 'scripts', 'install-daemon.sh'));
+});
 
 // ---- Static frontend ------------------------------------------------------
 const publicDir = path.join(config.root, 'public');

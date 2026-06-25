@@ -5,6 +5,8 @@ const url = require('url');
 const db = require('../db');
 const auth = require('../auth');
 const pm = require('../services/processManager');
+const dispatch = require('../services/nodeDispatch');
+const nodeClient = require('../services/nodeClient');
 const { canAccessServer, hasPermission } = require('../routes/helpers');
 
 const WS_PATH = /^\/api\/servers\/([^/]+)\/ws$/;
@@ -53,16 +55,27 @@ function handleConnection(ws, user, server) {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
   };
 
-  // Initial state + log replay.
-  const state = pm.state(server.id);
-  send({ event: 'status', status: state.status });
-  send({ event: 'stats', stats: state.stats });
-  for (const entry of pm.recentLogs(server.id)) {
-    send({ event: 'console', ...entry });
+  // Event source (console/status/stats) + command/power sink: the LOCAL process
+  // manager, or a proxied WebSocket to the server's REMOTE node daemon.
+  const local = dispatch.isLocalServer(server);
+  let daemonWs = null;
+  if (local) {
+    const state = pm.state(server.id);
+    send({ event: 'status', status: state.status });
+    send({ event: 'stats', stats: state.stats });
+    for (const entry of pm.recentLogs(server.id)) send({ event: 'console', ...entry });
+  } else {
+    try {
+      daemonWs = nodeClient.openDaemonWs(dispatch.nodeFor(server), server.id);
+      daemonWs.on('message', (raw) => { try { send(JSON.parse(raw.toString())); } catch { /* ignore */ } });
+      daemonWs.on('error', () => send({ event: 'console', stream: 'sys', line: 'node connection error' }));
+      daemonWs.on('close', () => { try { ws.close(); } catch {} });
+    } catch { send({ event: 'error', message: 'Could not reach the node daemon.' }); }
   }
+  const sendDaemon = (o) => { try { if (daemonWs && daemonWs.readyState === daemonWs.OPEN) daemonWs.send(JSON.stringify(o)); } catch {} };
   send({ event: 'console', stream: 'sys', line: '\u001b[90m── connected to Cloud Panel console ──\u001b[0m' });
 
-  const unsubscribe = pm.subscribe(server.id, send);
+  const unsubscribe = local ? pm.subscribe(server.id, send) : () => { try { daemonWs && daemonWs.close(); } catch {} };
 
   // Identity captured at connect; used to detect revocation later.
   const userId = user.id;
@@ -114,11 +127,12 @@ function handleConnection(ws, user, server) {
     }
     if (msg.type === 'command' && typeof msg.command === 'string') {
       if (!hasPermission(live.user, live.server, 'control.command')) { send({ event: 'error', message: 'You do not have permission to send commands.' }); return; }
-      pm.command(live.server.id, msg.command);
+      if (local) pm.command(live.server.id, msg.command);
+      else sendDaemon({ type: 'command', command: msg.command });
     } else if (msg.type === 'power' && ['start', 'stop', 'restart', 'kill'].includes(msg.action)) {
       if (!hasPermission(live.user, live.server, 'control.power')) { send({ event: 'error', message: 'You do not have permission to control power.' }); return; }
-      const result = await pm.power(live.server, msg.action);
-      if (!result.ok) send({ event: 'error', message: result.error });
+      if (local) { const result = await pm.power(live.server, msg.action); if (!result.ok) send({ event: 'error', message: result.error }); }
+      else sendDaemon({ type: 'power', action: msg.action });
     }
   });
 

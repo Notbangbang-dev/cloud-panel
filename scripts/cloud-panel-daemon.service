@@ -1,0 +1,17 @@
+[Unit]
+Description=Cloud Panel daemon (node agent)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloud-panel-daemon
+WorkingDirectory=/opt/cloud-panel
+EnvironmentFile=/opt/cloud-panel/.env.daemon
+ExecStart=/usr/bin/node /opt/cloud-panel/src/daemon.js
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
