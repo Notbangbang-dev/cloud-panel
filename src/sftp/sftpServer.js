@@ -1,13 +1,13 @@
 'use strict';
 
 /**
- * SFTP server on the PufferPanel SFTP port (5657).
+ * SFTP server on the dedicated SFTP port (5657).
  *
  * Login:  username = "<panelUser>.<serverIdentifier>"   password = panel password
  * Root:   the matched server's volume directory.
  *
- * This mirrors how Pterodactyl/PufferPanel expose per-server SFTP, but on
- * PufferPanel's port (5657) rather than Pterodactyl's 2022.
+ * Each panel user gets per-server SFTP access scoped to that server's own
+ * volume directory.
  */
 
 const fs = require('fs');

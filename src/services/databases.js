@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Per-server databases — provision real MySQL / MariaDB databases (the classic
- * Pterodactyl feature). Admins register one or more database *hosts* in
+ * Per-server databases — provision real MySQL / MariaDB databases. Admins
+ * register one or more database *hosts* in
  * Admin → Databases; server owners then create databases that count against
  * their server's `featureLimits.databases` quota.
  *

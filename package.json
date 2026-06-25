@@ -2,7 +2,7 @@
   "name": "cloud-panel",
   "version": "2.20.1",
   "private": true,
-  "description": "Cloud Panel — a self-hostable, single-node game server management panel with a Pterodactyl-style UX (PufferPanel ports: web 8080, SFTP 5657).",
+  "description": "Cloud Panel — a self-hostable, single-node game server management panel with a clean, modern UX (ports: web 8080, SFTP 5657).",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
@@ -32,8 +32,6 @@
   "keywords": [
     "game-server",
     "panel",
-    "pterodactyl",
-    "pufferpanel",
     "cloud-panel"
   ],
   "author": "Cloud Panel",

@@ -3,12 +3,9 @@
 /**
  * Cloud Panel configuration.
  *
- * Default service ports follow PufferPanel conventions (NOT Pterodactyl):
- *   - Web / API : 8080   (PufferPanel default web port)
- *   - SFTP       : 5657   (PufferPanel default SFTP port)
- *
- * Pterodactyl by comparison uses 80/443 for the panel and 2022 for SFTP — we
- * deliberately do not use those.
+ * Default service ports:
+ *   - Web / API : 8080
+ *   - SFTP       : 5657
  */
 
 const path = require('path');
@@ -89,10 +86,10 @@ function resolveJwtSecret() {
 const config = {
   root: ROOT,
 
-  // ---- Network (PufferPanel ports) ----------------------------------------
+  // ---- Network (ports) ----------------------------------------------------
   host: process.env.CP_HOST || '0.0.0.0',
-  webPort: int(process.env.CP_WEB_PORT, 8080), // PufferPanel web port
-  sftpPort: int(process.env.CP_SFTP_PORT, 5657), // PufferPanel SFTP port
+  webPort: int(process.env.CP_WEB_PORT, 8080), // panel web/API port
+  sftpPort: int(process.env.CP_SFTP_PORT, 5657), // SFTP port
 
   // Best-effort OS firewall (ufw) automation: when a game-server allocation is
   // added, try to open its port. 'off' = never; 'auto' = run `ufw` directly
@@ -201,8 +198,8 @@ const config = {
   },
 
   // ---- Default allocation port range for game servers ---------------------
-  // (These are the ports handed to game servers, mirroring how PufferPanel /
-  //  Pterodactyl manage allocations — separate from the panel's own ports.)
+  // (These are the ports handed to game servers as allocations — separate from
+  //  the panel's own web/SFTP ports.)
   allocationRange: {
     start: int(process.env.CP_ALLOC_START, 25565),
     end: int(process.env.CP_ALLOC_END, 25600),

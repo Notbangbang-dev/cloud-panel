@@ -67,7 +67,7 @@ SOURCE_DIR="$(dirname "$SCRIPT_DIR")"
 echo
 echo "  ┌────────────────────────────────────────────┐"
 echo "  │   Cloud Panel — VPS Installer                │"
-echo "  │   Web :${WEB_PORT}   SFTP :${SFTP_PORT}  (PufferPanel ports)  │"
+echo "  │   Web :${WEB_PORT}   SFTP :${SFTP_PORT}  (default ports)      │"
 echo "  └────────────────────────────────────────────┘"
 echo
 

@@ -1,7 +1,7 @@
 # Cloud Panel
 
-> A self-hostable, **single-node** game server management panel — Pterodactyl-style
-> UX with **PufferPanel's default ports**. Deploy. Scale. Dominate.
+> A self-hostable, **single-node** game server management panel with a clean,
+> modern UX. Deploy. Scale. Dominate.
 
 **Repository:** https://github.com/Notbangbang-dev/cloud-panel
 
@@ -22,9 +22,8 @@ voice don't oversell it:
 
 - **It's single-node.** Servers run on the **same host as the panel**. The
   *Nodes / Locations / Allocations* admin screens organize ports and metadata,
-  but there is **no separate daemon**, so you can't yet distribute servers across
-  multiple machines the way Pterodactyl (panel) + Wings (per-node daemon) does.
-  Plan capacity for one box.
+  but there is **no separate per-node daemon**, so you can't yet distribute
+  servers across multiple machines. Plan capacity for one box.
 - **Multi-tenant = sandbox required.** Since v2.9.0 the panel is secure by
   default and refuses to run servers unless a sandbox is active (`CP_OCI=1`) or
   you explicitly accept the risk on a trusted panel. See **SECURITY.md**.
@@ -32,12 +31,12 @@ voice don't oversell it:
   or third-party audited. Treat it as a capable hobby/community panel, not a
   drop-in commercial multi-tenant hosting platform.
 
-It deliberately uses **PufferPanel's ports** rather than Pterodactyl's:
+Default service ports:
 
-| Service | Cloud Panel / PufferPanel | (Pterodactyl) |
-| ------- | ------------------------- | ------------- |
-| Web / API | **8080** | 80 / 443 |
-| SFTP | **5657** | 2022 |
+| Service | Port |
+| ------- | ---- |
+| Web / API | **8080** |
+| SFTP | **5657** |
 
 ---
 
@@ -189,8 +188,8 @@ All settings are environment variables (see `.env.example`). Common ones:
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `CP_WEB_PORT` | `8080` | Panel web/API port (PufferPanel) |
-| `CP_SFTP_PORT` | `5657` | SFTP port (PufferPanel) |
+| `CP_WEB_PORT` | `8080` | Panel web/API port |
+| `CP_SFTP_PORT` | `5657` | SFTP port |
 | `CP_PUBLIC_HOST` | `127.0.0.1` | Address advertised for allocations/SFTP |
 | `CP_JWT_SECRET` | dev secret | **Change in production** |
 | `CP_ALLOC_START` / `CP_ALLOC_END` | `25565` / `25600` | Seeded game-port range |

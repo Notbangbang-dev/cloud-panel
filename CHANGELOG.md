@@ -1271,8 +1271,8 @@ upgrade (`ensureEggs` is additive).
 ### ✨ Added — Console Automations (a Cloud Panel exclusive)
 
 Reactive rules that watch each server's **live console output** and automatically
-take action when a line matches — something other panels (Pterodactyl,
-PufferPanel) don't offer. New **Automations** tab on every server.
+take action when a line matches — something most panels don't offer. New
+**Automations** tab on every server.
 
 - **Match** console output by **contains** text or **regex** (case-sensitive optional).
 - **Act** automatically:

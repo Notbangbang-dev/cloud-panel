@@ -1,0 +1,21 @@
+# 🎯 Cloud Panel v2.20.1 — "Right Door"
+
+🚪 **Fixed the real cause of "connection refused": your server was listening on the wrong port.**
+
+## 🎯 The bug
+Minecraft only reads its port from `server.properties` (`server-port`). The panel was giving your server one port (e.g. **25574**) and opening *that* in the firewall — but the server kept binding its own default **25565**. So when you connected to the panel's port, nothing was there → **connection refused.** (Different port number, same "nobody's home" result.)
+
+## ✅ The fix
+- On start, the panel now writes the **server's allocated port** straight into `server.properties` (`server-port` + `query.port`) and blanks `server-ip` so it listens on **all interfaces**.
+- Scoped to Minecraft servers — proxies (BungeeCord/Velocity) with their own config files are left alone. Your other settings (motd, max-players, etc.) are untouched.
+
+## 👉 After updating
+1. `sudo cloud-panel-update`
+2. **Restart your server** (so the port gets written).
+3. Connect to the **exact port the panel's Network tab shows** — e.g. `your-ip:25574`.
+4. On AWS/cloud: make sure your **Security Group** allows that port inbound.
+
+## ✅ Tests
+- **40 automated tests**, green in CI on Node 18/20/22. Verified end-to-end that a Paper server's `server-port` becomes its allocation on start.
+
+*Cloud Panel • Deploy. Scale. Dominate.*

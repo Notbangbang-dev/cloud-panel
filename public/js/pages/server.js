@@ -693,7 +693,7 @@
     const sftpCard = h('div', { class: 'card' },
       h('h3', { html: `${icon('key', 16)} SFTP Connection` }),
       h('p', { class: 'muted', style: { marginTop: '4px', fontSize: '13px' } },
-        'Connect with any SFTP client (FileZilla, WinSCP, VS Code). Uses the PufferPanel SFTP port.'),
+        'Connect with any SFTP client (FileZilla, WinSCP, VS Code). Uses the dedicated SFTP port (5657).'),
       h('dl', { class: 'kv', style: { marginTop: '16px' } },
         h('dt', {}, 'Address'), h('dd', {}, copyChip(`${host}:${sftpPort}`)),
         h('dt', {}, 'Port'), h('dd', {}, copyChip(String(sftpPort))),

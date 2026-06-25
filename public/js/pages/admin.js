@@ -100,7 +100,7 @@
     ));
 
     root.appendChild(h('div', { class: 'note', style: { margin: '20px 0' },
-      html: `${icon('info', 15)} Panel running on PufferPanel ports — <b>Web</b> <span class="mono">${d.ports.web}</span> · <b>SFTP</b> <span class="mono">${d.ports.sftp}</span>. Version ${d.version}.` }));
+      html: `${icon('info', 15)} Panel ports — <b>Web</b> <span class="mono">${d.ports.web}</span> · <b>SFTP</b> <span class="mono">${d.ports.sftp}</span>. Version ${d.version}.` }));
 
     root.appendChild(h('div', { class: 'section-title' }, 'Node Capacity'));
     const nodeGrid = h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' } });
