@@ -4,6 +4,16 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.20.2] — 2026-06-25 — "Plain Truth"
+
+### 📣 Single-node scope stated plainly on the site
+- The marketing site and docs now spell out the **single-node** reality (already
+  in the README): servers run on the **same host as the panel**; the Nodes /
+  Locations / Allocations screens organize ports and metadata, but there's **no
+  separate per-node daemon**, so you can't yet distribute servers across multiple
+  machines — plan capacity for one box. Added as a homepage FAQ ("Can it run
+  servers across multiple machines?") and a docs callout. No code changes.
+
 ## [2.20.1] — 2026-06-25 — "Right Door"
 
 ### 🎯 Minecraft servers now listen on the port the panel gave them
