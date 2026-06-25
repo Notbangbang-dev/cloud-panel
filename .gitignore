@@ -4,3 +4,5 @@ data/
 *.log
 npm-debug.log*
 .DS_Store
+the last changelog.txt
+.claude/
