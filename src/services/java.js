@@ -104,6 +104,40 @@ function applyHostBinary(cmd, server, egg) {
   return { cmd: cmd.replace(/^\s*java/, prog), note: `Using Java ${v} (${bin}).` };
 }
 
+// ---- Compatibility JVM flags (auto-applied) --------------------------------
+// Old Minecraft/Spigot/Paper builds bundle an ancient Netty whose native epoll
+// transport can't read buffer addresses on Java 16+ — it throws
+// "java.lang.RuntimeException: Unable to access address of buffer" on every
+// packet, flooding the console the instant a client connects. Forcing Netty onto
+// the portable NIO transport fixes it on ANY Java version (and is a no-op cost on
+// the small/single-node servers this panel targets). We apply it for Java eggs so
+// legacy servers "just work" without the operator hand-editing JVM flags.
+const NETTY_NO_NATIVE = '-Dio.netty.transport.noNative=true';
+
+/** The compatibility JVM flags the panel auto-applies for a given egg. */
+function compatFlags(egg) {
+  return isJavaEgg(egg) ? [NETTY_NO_NATIVE] : [];
+}
+
+/**
+ * Inject the compatibility flags right after the leading `java` token of a
+ * startup command. Idempotent and conservative:
+ *   - only touches a command that actually starts with the bare `java` program,
+ *   - never duplicates a flag, and
+ *   - backs off entirely if the operator already mentions the flag's property
+ *     (so `-Dio.netty.transport.noNative=false` is respected as an opt-out).
+ * Runs in BOTH host and OCI modes (before any host-binary rewrite), so it never
+ * mutates the stored startup command — it adapts at launch and is fully
+ * reversible.
+ */
+function applyCompat(cmd, egg) {
+  const flags = compatFlags(egg);
+  if (!flags.length) return cmd;
+  if (!/^\s*java(\s|$)/.test(cmd)) return cmd; // not a `java ...` startup — leave it
+  if (/io\.netty\.transport\.noNative/.test(cmd)) return cmd; // operator already decided
+  return cmd.replace(/^(\s*)java\b/, `$1java ${flags.join(' ')}`);
+}
+
 module.exports = {
   ALLOWED_VERSIONS,
   normalizeVersion,
@@ -114,4 +148,6 @@ module.exports = {
   resolveImage,
   hostBinary,
   applyHostBinary,
+  compatFlags,
+  applyCompat,
 };

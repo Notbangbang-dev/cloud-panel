@@ -4,6 +4,32 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.19.0] — 2026-06-24 — "Just Works"
+
+### ☕ Minecraft compatibility flags are now auto-applied
+- **Java/Minecraft servers now boot with the right compatibility flag automatically**
+  — no more hand-editing the startup command. The panel injects
+  `-Dio.netty.transport.noNative=true` at launch for Java eggs, which fixes the
+  infamous **`java.lang.RuntimeException: Unable to access address of buffer`** Netty
+  crash that floods the console when **legacy Minecraft (1.8.x) runs on modern Java**.
+- **Applied at launch in both modes** (container + host), so it **adapts without
+  mutating your stored startup command** — fully reversible, works for every
+  existing server with no migration.
+- **Idempotent + respects you:** never duplicated, and if your startup already
+  mentions `io.netty.transport.noNative` (e.g. you set it to `false` to keep native
+  epoll), the panel backs off and leaves your choice alone.
+- The **Startup → Java version** card now shows exactly what's auto-applied.
+
+> Why a flag instead of forcing Java 8? Java 8 is still the *best* runtime for 1.8.x
+> (pick it in Startup → Java version, instant in the container sandbox). But when a
+> legacy server ends up on a newer Java — e.g. host mode with only Java 21 installed
+> — this flag makes it run anyway instead of error-storming.
+
+### ✅ Tests
+- 37 tests (added compat-flag tests: injection, idempotency, opt-out, non-java
+  skip). Verified end-to-end that a Paper server launches with the flag, and the
+  startup UI shows it. CI green on Node 18/20/22.
+
 ## [2.18.0] — 2026-06-24 — "Gatekeeper"
 
 ### 🔓 Auto-open allocation ports in the host firewall (ufw)

@@ -326,7 +326,10 @@ const manager = {
 
     const egg = db.get('eggs', server.eggId);
     const dir = volumeDir(server);
-    const baseCmd = resolveStartup(server, egg);
+    // Auto-apply compatibility JVM flags (e.g. Netty noNative for legacy Minecraft
+    // on modern Java) — adapts the command at launch without mutating the stored
+    // startup, in BOTH modes.
+    const baseCmd = javaSvc.applyCompat(resolveStartup(server, egg), egg);
     // Java version: in OCI mode the chosen JRE comes from the container image
     // (see oci.imageFor), so the command keeps the bare `java`. In host mode we
     // rewrite `java` to the configured CP_JAVA_<version> binary when present.

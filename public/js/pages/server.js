@@ -791,7 +791,14 @@
         h('p', { class: 'muted', style: { fontSize: '13px', margin: '4px 0 14px' } },
           'Pick the Java runtime for this server (e.g. Java 21 for modern Minecraft, Java 8 for legacy). With the container sandbox this swaps the image automatically; in host mode it uses a configured CP_JAVA_<version> binary.'),
         h('label', { class: 'field', style: { maxWidth: '340px' } }, h('span', {}, 'Runtime'), javaSelect),
-        h('div', { class: 'chip', style: { marginTop: '12px' } }, h('span', { html: icon('box', 13) }), javaImageChip)
+        h('div', { class: 'chip', style: { marginTop: '12px' } }, h('span', { html: icon('box', 13) }), javaImageChip),
+        (jcfg.compatFlags && jcfg.compatFlags.length)
+          ? h('p', { class: 'muted', style: { fontSize: '12px', margin: '12px 0 0' } },
+              h('span', { html: icon('check', 12) }),
+              ' Compatibility auto-applied at launch: ',
+              h('code', {}, jcfg.compatFlags.join(' ')),
+              ' — lets legacy Minecraft run on modern Java (no manual flags needed).')
+          : null
       ) : null,
       varFields.length ? h('div', { class: 'card', style: { marginTop: '18px' } },
         h('h3', { style: { marginBottom: '16px' } }, 'Variables'),

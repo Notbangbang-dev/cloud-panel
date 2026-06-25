@@ -56,6 +56,27 @@ test('applyHostBinary only rewrites a leading java token, never injects arbitrar
   assert.equal(j.applyHostBinary('java -jar s.jar', {}, javaEgg).cmd, 'java -jar s.jar');
 });
 
+test('compatFlags + applyCompat fix legacy Minecraft on modern Java, idempotently', () => {
+  // Java eggs get the Netty noNative flag; others get nothing.
+  assert.deepEqual(j.compatFlags(javaEgg), ['-Dio.netty.transport.noNative=true']);
+  assert.deepEqual(j.compatFlags(nodeEgg), []);
+
+  // Injected right after the leading `java` token.
+  const out = j.applyCompat('java -Xms128M -Xmx1024M -jar server.jar nogui', javaEgg);
+  assert.equal(out, 'java -Dio.netty.transport.noNative=true -Xms128M -Xmx1024M -jar server.jar nogui');
+
+  // Idempotent — running it twice doesn't duplicate the flag.
+  assert.equal(j.applyCompat(out, javaEgg), out);
+
+  // Operator opt-out is respected (mentions the property already → untouched).
+  const optOut = 'java -Dio.netty.transport.noNative=false -jar server.jar';
+  assert.equal(j.applyCompat(optOut, javaEgg), optOut);
+
+  // Non-java egg and non-`java` commands are never touched.
+  assert.equal(j.applyCompat('node index.js', nodeEgg), 'node index.js');
+  assert.equal(j.applyCompat('./run.sh', javaEgg), './run.sh');
+});
+
 test('oci.buildRunArgs uses the selected Java image', () => {
   const server = { id: 'jv1', name: 'mc', javaVersion: 17, limits: { memory: 1024 } };
   const { image, args } = oci.buildRunArgs({

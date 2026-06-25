@@ -661,6 +661,7 @@ router.get('/servers/:id/startup', loadServer, requirePerm('startup'), (req, res
             default: javaSvc.defaultVersion(egg),
             current: javaSvc.normalizeVersion(req.server.javaVersion) || javaSvc.defaultVersion(egg),
             image: javaSvc.resolveImage(egg, req.server),
+            compatFlags: javaSvc.compatFlags(egg),
           }
         : { eligible: false },
     },
