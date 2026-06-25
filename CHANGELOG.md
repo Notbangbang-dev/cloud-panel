@@ -4,6 +4,26 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.19.1] — 2026-06-25 — "Tenant"
+
+### 📂 Sandboxed servers can write their own files again
+- **OCI containers now run as the panel's own user by default** (uid:gid), instead
+  of image-root. Previously a containerized server couldn't write its volume —
+  every config, log and `world/session.lock` failed with **"Permission denied"**
+  and the server aborted — because the container user didn't own the bind-mounted
+  files. Now ownership is consistent with the panel + file manager + SFTP, so
+  writes succeed. `CP_OCI_USER` still overrides if you want a specific uid.
+- **`HOME` now points at the server volume** inside the container, so libraries
+  that write to `~` don't hit the image's root-owned `/root`.
+
+> Upgrading from host mode to the container sandbox? Run once on the host to fix
+> any files a failed container run left misowned:
+> `sudo chown -R cloudpanel:cloudpanel /opt/cloud-panel/data/volumes`
+
+### ✅ Tests
+- 38 tests (added: container runs as the panel uid + HOME set; `CP_OCI_USER`
+  override honored). CI green on Node 18/20/22.
+
 ## [2.19.0] — 2026-06-24 — "Just Works"
 
 ### ☕ Minecraft compatibility flags are now auto-applied

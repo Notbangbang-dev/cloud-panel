@@ -77,11 +77,29 @@ test('compatFlags + applyCompat fix legacy Minecraft on modern Java, idempotentl
   assert.equal(j.applyCompat('./run.sh', javaEgg), './run.sh');
 });
 
-test('oci.buildRunArgs uses the selected Java image', () => {
+test('oci.buildRunArgs uses the selected Java image + keeps the volume writable', () => {
   const server = { id: 'jv1', name: 'mc', javaVersion: 17, limits: { memory: 1024 } };
   const { image, args } = oci.buildRunArgs({
     server, egg: javaEgg, argv: ['java', '-jar', 'server.jar'], dir: '/tmp/jv1', ports: [25565], env: {},
   });
   assert.equal(image, 'eclipse-temurin:17-jre');
   assert.ok(args.includes('eclipse-temurin:17-jre'), 'image appears in the run argv');
+  // HOME points at the volume so writes never hit the image's root-owned /root.
+  assert.ok(args.includes('HOME=/home/container'), 'HOME is set to the working dir');
+});
+
+test('oci.buildRunArgs honors an explicit CP_OCI_USER override', () => {
+  const config = require('../src/config');
+  const prev = config.oci.user;
+  config.oci.user = '1234:5678';
+  try {
+    const { args } = oci.buildRunArgs({
+      server: { id: 'u1', name: 'mc', limits: {} }, egg: javaEgg,
+      argv: ['java', '-jar', 's.jar'], dir: '/tmp/u1', ports: [25565], env: {},
+    });
+    const i = args.indexOf('--user');
+    assert.ok(i >= 0 && args[i + 1] === '1234:5678', 'CP_OCI_USER is used verbatim');
+  } finally {
+    config.oci.user = prev;
+  }
 });

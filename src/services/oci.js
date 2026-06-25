@@ -169,7 +169,8 @@ function buildRunArgs({ server, egg, argv, dir, ports, env }) {
   if (OCI.pull && OCI.pull !== '') args.push(`--pull=${OCI.pull}`);
 
   // The server volume is the container's working directory; nothing else from
-  // the host is visible inside the sandbox.
+  // the host is visible inside the sandbox. HOME points at the volume too, so
+  // anything that writes to ~ lands in writable space (not the image's /root).
   args.push('-v', `${dir}:${workdir}`, '-w', workdir);
 
   // ---- Sandbox hardening --------------------------------------------------
@@ -195,7 +196,19 @@ function buildRunArgs({ server, egg, argv, dir, ports, env }) {
   }
 
   // ---- Identity / network -------------------------------------------------
-  if (OCI.user) args.push('--user', OCI.user);
+  // Run as the PANEL's own uid:gid by default so files the server writes into the
+  // mounted volume are owned consistently with the panel (and the file manager /
+  // SFTP) and stay writable. Without this the container runs as image-root (or a
+  // remapped uid) that doesn't own the volume → "Permission denied" on every
+  // config/world file and the server aborts on session.lock. CP_OCI_USER overrides.
+  let runUser = OCI.user;
+  if (!runUser && process.platform !== 'win32' && typeof process.getuid === 'function') {
+    runUser = `${process.getuid()}:${process.getgid()}`;
+  }
+  if (runUser) args.push('--user', runUser);
+  // HOME → the volume, so libraries that write to ~ don't hit the image's
+  // root-owned /root (which the non-root run user can't write).
+  args.push('-e', `HOME=${workdir}`);
   if (OCI.network) {
     args.push('--network', OCI.network); // host net etc. publishes nothing
   } else {
