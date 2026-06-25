@@ -4,6 +4,27 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.20.0] — 2026-06-25 — "Open Sesame"
+
+### 🔓 A server's port is opened in ufw when it starts
+- **Starting a server now best-effort `ufw allow`s its allocation port(s)** — not
+  just when the allocation is first created. This covers servers whose ports were
+  assigned before firewall automation existed, so the host firewall is in sync
+  with whatever's actually running.
+- Same safety as the rest of the firewall code: integer-validated ports, `execFile`
+  (no shell), fire-and-forget (never delays a start), and a no-op when ufw isn't
+  present/permitted (it logs the exact `sudo ufw allow <port>` instead).
+
+> ⚠️ Honest scope (unchanged): this manages the **host** firewall (ufw) only.
+> On a cloud host (AWS/GCP/Azure) the provider's **security group is the real gate**
+> and the panel cannot open it. And a *"connection refused"* error is **not** a
+> firewall block (that would *time out*) — it means nothing is listening on the
+> port yet (server not running / wrong port), so opening the port won't change it.
+
+### ✅ Tests
+- 39 tests (added: starting a server opens its allocation port in the firewall).
+  CI green on Node 18/20/22.
+
 ## [2.19.1] — 2026-06-25 — "Tenant"
 
 ### 📂 Sandboxed servers can write their own files again

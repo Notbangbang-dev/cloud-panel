@@ -47,3 +47,36 @@ test('console output is rate-limited so a flooding server cannot lag the panel',
   unsub2();
   assert.equal(sysSeen, 50, 'all 50 panel/system lines emitted (never rate-limited)');
 });
+
+test('starting a server opens its allocation port(s) in the firewall', () => {
+  const firewall = require('../src/services/firewall');
+  const config = require('../src/config');
+  const isolation = require('../src/services/isolation');
+
+  // Capture firewall.allowPort calls without touching the real ufw.
+  const opened = [];
+  const realAllow = firewall.allowPort;
+  firewall.allowPort = (p) => { opened.push(Number(p)); return Promise.resolve({ ok: false, skipped: 'test' }); };
+  // Let the start proceed past the secure-by-default gate in this unit test.
+  const realBlock = isolation.execBlockReason;
+  isolation.execBlockReason = () => null;
+
+  try {
+    const sid = 'pm_fw_' + Date.now();
+    const aid = 'alloc_' + Date.now();
+    db.insert('allocations', { id: aid, nodeId: 'n', ip: '0.0.0.0', port: 25599, primary: true, serverId: sid });
+    db.insert('servers', {
+      id: sid, name: sid, uuid: sid, eggId: 'missing-egg', ownerId: 'u',
+      suspended: false, allocationId: aid, limits: { memory: 512 },
+      startup: 'node -e "0"', // exits cleanly & instantly — no lingering child
+    });
+
+    pm.start(db.get('servers', sid)); // firewall.allowPort runs BEFORE the (instant) spawn
+    assert.ok(opened.includes(25599), `expected port 25599 to be opened, got ${opened.join(',')}`);
+
+    db.remove('servers', sid); db.remove('allocations', aid);
+  } finally {
+    firewall.allowPort = realAllow;
+    isolation.execBlockReason = realBlock;
+  }
+});

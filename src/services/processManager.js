@@ -11,6 +11,7 @@ const { spawn } = require('child_process');
 const isolation = require('./isolation');
 const oci = require('./oci');
 const javaSvc = require('./java');
+const firewall = require('./firewall');
 const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
@@ -323,6 +324,13 @@ const manager = {
       const blocked = isolation.execBlockReason();
       if (blocked) return { ok: false, error: blocked };
     }
+
+    // Best-effort: open THIS server's port(s) in the host firewall (ufw) now that
+    // it's actually starting — covers ports assigned before firewall automation
+    // existed. Fire-and-forget so it never delays the start; a no-op on cloud
+    // hosts (the provider's security group is the real gate) and when ufw isn't
+    // present/permitted (firewall.js logs an actionable hint then).
+    for (const p of serverPorts(server)) firewall.allowPort(p).catch(() => {});
 
     const egg = db.get('eggs', server.eggId);
     const dir = volumeDir(server);
