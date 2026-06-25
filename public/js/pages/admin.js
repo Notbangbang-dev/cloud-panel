@@ -853,18 +853,26 @@
     try {
       const list = (await CP.api.get('/admin/nodes')).data;
       CP.clear(wrap);
+      const pill = (n) => {
+        const color = n.status === 'local' ? '#6ea8fe' : n.status === 'online' ? '#36d399' : (n.status === 'offline' ? '#f87272' : '#9aa');
+        const seen = (n.status !== 'local' && n.lastSeen) ? ' · ' + new Date(n.lastSeen).toLocaleTimeString() : '';
+        return h('span', { class: 'mono', style: { fontSize: '12px', color }, title: n.daemonUrl || '' }, '● ' + (n.status || 'unknown') + seen);
+      };
       const tbody = h('tbody');
-      list.forEach((n) => tbody.appendChild(h('tr', {},
-        h('td', {}, h('b', {}, n.name), h('div', { class: 'muted', style: { fontSize: '12px' } }, n.description || '')),
-        h('td', { class: 'muted' }, n.location ? n.location.long : '—'),
-        h('td', { class: 'mono muted' }, n.fqdn),
-        h('td', { class: 'muted nowrap' }, fmt.mib(n.memory)),
-        h('td', { class: 'muted' }, `${n.serverCount} srv · ${n.allocationsUsed}/${n.allocationCount}`),
-        h('td', {}, h('div', { class: 'row-actions' },
-          h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delNode(n, () => nodes(CP.clear(root))) })))
-      )));
+      list.forEach((n) => {
+        const actions = [];
+        if (n.status !== 'local') actions.push(h('button', { class: 'btn sm ghost icon', title: 'Setup / rotate daemon token', html: icon('refresh', 14), onclick: () => reconfigureNode(n) }));
+        actions.push(h('button', { class: 'btn sm ghost icon', title: 'Delete', html: icon('trash', 14), onclick: () => delNode(n, () => nodes(CP.clear(root))) }));
+        tbody.appendChild(h('tr', {},
+          h('td', {}, h('b', {}, n.name), h('div', { class: 'muted', style: { fontSize: '12px' } }, n.description || '')),
+          h('td', {}, pill(n)),
+          h('td', { class: 'mono muted' }, `${n.fqdn}:${n.daemonPort}`),
+          h('td', { class: 'muted nowrap' }, fmt.mib(n.memory)),
+          h('td', { class: 'muted' }, `${n.serverCount} srv · ${n.allocationsUsed}/${n.allocationCount}`),
+          h('td', {}, h('div', { class: 'row-actions' }, ...actions))));
+      });
       wrap.appendChild(h('table', { class: 'tbl' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Node'), h('th', {}, 'Location'), h('th', {}, 'FQDN'), h('th', {}, 'Memory'), h('th', {}, 'Usage'), h('th', { class: 'right' }, ''))), tbody));
+        h('thead', {}, h('tr', {}, h('th', {}, 'Node'), h('th', {}, 'Status'), h('th', {}, 'Daemon'), h('th', {}, 'Memory'), h('th', {}, 'Usage'), h('th', { class: 'right' }, ''))), tbody));
     } catch (err) { CP.clear(wrap); wrap.appendChild(CP.empty('alert', err.message)); }
   }
   async function createNode(done) {
@@ -873,22 +881,46 @@
     const desc = h('input', {});
     const loc = h('select', {}, ...locs.map((l) => h('option', { value: l.id }, l.long || l.short)));
     const fqdn = h('input', { value: location.hostname });
+    const dport = h('input', { type: 'number', value: '8080' });
     const mem = h('input', { type: 'number', value: '16384' });
     const disk = h('input', { type: 'number', value: '102400' });
     const cpu = h('input', { type: 'number', value: '800' });
     const ref = CP.ui.modal({ title: 'Create Node', size: 'lg', body: h('div', {},
+      h('p', { class: 'muted', style: { fontSize: '13px', margin: '0 0 12px' } }, 'A node is a machine that runs servers. Leave FQDN as this host for the local node, or point it at another VPS — you\'ll get a one-line command to install the daemon there.'),
       h('label', { class: 'field' }, h('span', {}, 'Name'), name),
       h('label', { class: 'field' }, h('span', {}, 'Description'), desc),
       h('div', { class: 'grid', style: { gridTemplateColumns: '1fr 1fr', gap: '0 16px' } },
         h('label', { class: 'field' }, h('span', {}, 'Location'), loc),
         h('label', { class: 'field' }, h('span', {}, 'FQDN / IP'), fqdn),
+        h('label', { class: 'field' }, h('span', {}, 'Daemon port'), dport),
         h('label', { class: 'field' }, h('span', {}, 'Memory (MB)'), mem),
         h('label', { class: 'field' }, h('span', {}, 'Disk (MB)'), disk),
         h('label', { class: 'field' }, h('span', {}, 'CPU (%)'), cpu))),
       footer: [h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Cancel'),
         h('button', { class: 'btn primary', onclick: async () => {
-          try { await CP.api.post('/admin/nodes', { name: name.value, description: desc.value, locationId: loc.value, fqdn: fqdn.value, memory: +mem.value, disk: +disk.value, cpu: +cpu.value }); CP.ui.toast('Node created', 'ok'); ref.close(); done(); }
-          catch (err) { CP.ui.toast(err.message, 'err'); } } }, 'Create')] });
+          try {
+            const res = await CP.api.post('/admin/nodes', { name: name.value, description: desc.value, locationId: loc.value, fqdn: fqdn.value, daemonPort: +dport.value, memory: +mem.value, disk: +disk.value, cpu: +cpu.value });
+            CP.ui.toast('Node created', 'ok'); ref.close(); done();
+            showInstallModal(res); // one-time token + install command
+          } catch (err) { CP.ui.toast(err.message, 'err'); } } }, 'Create')] });
+  }
+  // Show the (one-time) daemon install command + token for a node.
+  function showInstallModal(data) {
+    const cmd = data.installCommand || '';
+    const ta = h('textarea', { readonly: true, rows: '4', style: { width: '100%', fontFamily: 'monospace', fontSize: '12px' } }, cmd);
+    const ref = CP.ui.modal({ title: 'Install the daemon on this node', size: 'lg', body: h('div', {},
+      h('p', { class: 'muted', style: { fontSize: '13px' } }, 'Run this on the node VPS (Docker required). The token is shown ONCE — copy it now. The panel URL must be reachable from the node, and you must open the daemon + game ports in your cloud provider\'s security group.'),
+      ta,
+      h('div', { class: 'muted', style: { fontSize: '12px', marginTop: '10px' } }, 'Node token: ', h('code', {}, data.daemonToken || ''))),
+      footer: [
+        h('button', { class: 'btn primary', onclick: () => { try { navigator.clipboard.writeText(cmd); CP.ui.toast('Command copied', 'ok'); } catch { ta.select(); } } }, 'Copy command'),
+        h('button', { class: 'btn ghost', onclick: () => ref.close() }, 'Done')] });
+  }
+  // Rotate a node's token and re-show the install command (re-runs the daemon).
+  async function reconfigureNode(n) {
+    if (!(await CP.ui.confirm({ title: 'Rotate daemon token', message: `Generate a new token for ${n.name}? The node's daemon must be re-run with the new command.`, confirmText: 'Rotate' }))) return;
+    try { showInstallModal(await CP.api.post(`/admin/nodes/${n.id}/rotate-token`, {})); }
+    catch (err) { CP.ui.toast(err.message, 'err'); }
   }
   async function delNode(n, done) {
     if (!(await CP.ui.confirm({ title: 'Delete node', message: `Delete ${n.name}?`, confirmText: 'Delete' }))) return;
