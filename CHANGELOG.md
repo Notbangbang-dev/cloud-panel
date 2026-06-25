@@ -4,6 +4,28 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.18.0] — 2026-06-24 — "Gatekeeper"
+
+### 🔓 Auto-open allocation ports in the host firewall (ufw)
+- **Adding an allocation now tries to `ufw allow` its port automatically**, and the
+  **default range (25565–25600) + web/SFTP ports are opened at boot** — so you no
+  longer have to remember a manual `ufw allow` for normal use.
+- **Best-effort & safe:** ports are validated as integers and passed as argv to
+  `execFile` (never a shell — an allocation port can't inject a command), it's
+  Linux/ufw-only, and it **never blocks or crashes a request**. If it can't (no
+  ufw, or no privilege), it logs one actionable line: `run: sudo ufw allow <port>`.
+- **Modes** via `CP_MANAGE_FIREWALL`: `off` / `auto` (run ufw directly — works when
+  the panel is root) / `sudo` (via a narrow sudoers rule). Re-run the installer
+  with `CP_FIREWALL_AUTOMANAGE=1` to set up the scoped sudoers rule (ufw only) so
+  the normally-unprivileged panel can do it.
+- **Honest scope:** this manages the *host* firewall only. On a cloud host
+  (AWS/GCP/Azure) the provider's **security group is the real gate**, and the panel
+  cannot touch it — you still open ports there yourself.
+
+### ✅ Tests
+- 36 tests (added 5 firewall tests: strict integer port validation, no-shell argv,
+  range/invalid rejection, mode gating). CI green on Node 18/20/22.
+
 ## [2.17.1] — 2026-06-24 — "Floodgate"
 
 ### 🚦 A spamming server can no longer lag the whole panel

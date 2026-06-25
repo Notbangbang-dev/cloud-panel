@@ -47,6 +47,11 @@ OCI_RUNTIME_SET=0; [ -n "${CP_OCI_RUNTIME:-}" ] && OCI_RUNTIME_SET=1
 OCI_RUNTIME="${CP_OCI_RUNTIME:-docker}"
 OCI_ENABLE=0
 
+# Let the (unprivileged) panel open ufw ports itself when an allocation is added.
+# OFF by default: it requires a narrow sudoers rule AND relaxing the unit's
+# NoNewPrivileges, a deliberate trade-off. Set CP_FIREWALL_AUTOMANAGE=1 to opt in.
+FW_AUTOMANAGE="${CP_FIREWALL_AUTOMANAGE:-0}"
+
 c_blue='\033[1;36m'; c_grn='\033[1;32m'; c_ylw='\033[1;33m'; c_red='\033[1;31m'; c_off='\033[0m'
 say()  { echo -e "${c_blue}::${c_off} $*"; }
 ok()   { echo -e "${c_grn}✓${c_off} $*"; }
@@ -269,6 +274,21 @@ EOF
     } >> "$APP_DIR/.env"
     SANDBOX_UNSET=1
   fi
+  if [ "$FW_AUTOMANAGE" = "1" ]; then
+    {
+      echo "# Panel opens new allocation ports in ufw automatically (via sudoers)."
+      echo "CP_MANAGE_FIREWALL=sudo"
+    } >> "$APP_DIR/.env"
+  else
+    {
+      echo "# Auto-open allocation ports in the host firewall (ufw):"
+      echo "#   off  = never;  auto = only when the panel runs as root;"
+      echo "#   sudo = via a sudoers rule (re-run the installer with CP_FIREWALL_AUTOMANAGE=1)."
+      echo "# NOTE: on a cloud host, your provider's SECURITY GROUP is the real gate — open"
+      echo "# ports there too; the panel cannot touch it."
+      echo "CP_MANAGE_FIREWALL=auto"
+    } >> "$APP_DIR/.env"
+  fi
   chown "$RUN_USER":"$RUN_USER" "$APP_DIR/.env"
   chmod 600 "$APP_DIR/.env"
 else
@@ -304,6 +324,28 @@ else
   fi
 fi
 
+# ---- 6c. Firewall auto-manage (opt-in) -----------------------------------
+# When opted in, grant the panel user a NARROW, passwordless sudoers rule for ufw
+# ONLY, so the (otherwise unprivileged) panel can open allocation ports itself.
+# This requires relaxing NoNewPrivileges below (sudo can't escalate otherwise) —
+# a conscious trade-off, hence opt-in.
+NNP=true
+if [ "$FW_AUTOMANAGE" = "1" ]; then
+  UFW_BIN="$(command -v ufw || echo /usr/sbin/ufw)"
+  SUDOERS=/etc/sudoers.d/cloud-panel-ufw
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$RUN_USER" "$UFW_BIN" > "$SUDOERS.tmp"
+  chmod 440 "$SUDOERS.tmp"
+  if visudo -cf "$SUDOERS.tmp" >/dev/null 2>&1; then
+    mv "$SUDOERS.tmp" "$SUDOERS"
+    NNP=false
+    ok "Firewall auto-manage enabled — '${RUN_USER}' may run '${UFW_BIN}' via sudo (NoNewPrivileges relaxed)."
+    warn "Relaxing NoNewPrivileges slightly widens the panel's privileges; the sudoers rule is scoped to ufw only."
+  else
+    rm -f "$SUDOERS.tmp"
+    warn "Could not install a valid ufw sudoers rule — leaving firewall auto-manage OFF."
+  fi
+fi
+
 # ---- 7. systemd service --------------------------------------------------
 say "Creating systemd service '${SERVICE}'…"
 cat > "/etc/systemd/system/${SERVICE}.service" <<EOF
@@ -321,7 +363,7 @@ ExecStart=$(command -v node) ${APP_DIR}/src/server.js
 Restart=always
 RestartSec=3
 LimitNOFILE=65535
-NoNewPrivileges=true
+NoNewPrivileges=${NNP}
 ProtectSystem=full
 
 [Install]

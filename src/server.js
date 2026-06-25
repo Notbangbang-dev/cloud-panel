@@ -21,6 +21,7 @@ const players = require('./services/players');
 const metrics = require('./services/metrics');
 const isolation = require('./services/isolation');
 const oci = require('./services/oci');
+const firewall = require('./services/firewall');
 const billing = require('./services/billing');
 const consoleWs = require('./ws/console');
 const sftp = require('./sftp/sftpServer');
@@ -30,6 +31,7 @@ const { log, requestLogger } = require('./log');
 db.load();
 isolation.init(); // optional: lock panel internals + enable per-server-user isolation
 oci.init(); // optional: run servers in OCI containers (CP_OCI=1); warns if required but unavailable
+firewall.ensureDefaults().catch(() => {}); // best-effort: open the default port range in ufw
 // Reliability: the runtime map is empty on boot, so clear stale 'running' rows
 // and resume servers that were running before shutdown (unless autoStart is off).
 try {

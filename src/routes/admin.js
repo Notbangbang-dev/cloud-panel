@@ -8,6 +8,7 @@ const db = require('../db');
 const auth = require('../auth');
 const config = require('../config');
 const pm = require('../services/processManager');
+const firewall = require('../services/firewall');
 const users = require('../services/users');
 const settings = require('../services/settings');
 const appearance = require('../services/appearance');
@@ -470,6 +471,11 @@ router.post('/nodes/:id/allocations', (req, res) => {
       })
     );
   }
+  // Best-effort: open each new port in the host firewall (ufw). Fire-and-forget
+  // so a slow/again-unprivileged ufw never blocks the API response; firewall.js
+  // logs an actionable line if it can't (and is a no-op on cloud hosts where the
+  // security group is the real gate).
+  for (const a of created) firewall.allowPort(a.port).catch(() => {});
   res.status(201).json({ data: created });
 });
 

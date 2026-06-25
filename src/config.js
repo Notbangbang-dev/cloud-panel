@@ -94,6 +94,15 @@ const config = {
   webPort: int(process.env.CP_WEB_PORT, 8080), // PufferPanel web port
   sftpPort: int(process.env.CP_SFTP_PORT, 5657), // PufferPanel SFTP port
 
+  // Best-effort OS firewall (ufw) automation: when a game-server allocation is
+  // added, try to open its port. 'off' = never; 'auto' = run `ufw` directly
+  // (works only when the panel runs as root); 'sudo' = run `sudo -n ufw` (needs
+  // a sudoers rule + NoNewPrivileges=false — the installer sets this up when you
+  // opt in with CP_FIREWALL_AUTOMANAGE=1). This is a CONVENIENCE for the host OS
+  // firewall only; on a cloud host the provider's security group is the real
+  // gate and the panel cannot touch it.
+  manageFirewall: (process.env.CP_MANAGE_FIREWALL || 'auto').trim().toLowerCase(),
+
   // The domain or IP people use to reach the panel. Shown for SFTP/allocation
   // hints, and used as the canonical address. Examples:
   //   CP_PUBLIC_HOST=panel.yourdomain.com   or   CP_PUBLIC_HOST=203.0.113.10
