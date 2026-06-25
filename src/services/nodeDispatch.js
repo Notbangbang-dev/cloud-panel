@@ -16,6 +16,7 @@ const db = require('../db');
 const config = require('../config');
 const pm = require('./processManager');
 const F = require('./files');
+const B = require('./backups');
 const nodeClient = require('./nodeClient');
 
 let _localNodeId = null;
@@ -167,10 +168,25 @@ const files = {
   },
 };
 
+/* ---- Backups facade (local → services/backups, remote → daemon) --------- */
+
+async function remoteBackup(server, method, suffix, body) {
+  return nodeClient.daemonFetch(nodeFor(server), method, `/api/daemon/servers/${server.id}/backups${suffix}`, { sub: server.id, body });
+}
+const backups = {
+  backupFile: B.backupFile,
+  async list(server) { if (isLocalServer(server)) return B.list(server.id); const r = await remoteBackup(server, 'GET', ''); return (r && r.data) || []; },
+  async get(server, bid) { if (isLocalServer(server)) return B.get(server.id, bid); const r = await remoteBackup(server, 'GET', `/${bid}`); return r && r.data; },
+  async create(server, opts) { if (isLocalServer(server)) return B.create(server, opts); const r = await remoteBackup(server, 'POST', '', { name: opts && opts.name, createdBy: opts && opts.createdBy }); return r && r.data; },
+  async restore(server, bid) { if (isLocalServer(server)) return B.restore(server, bid); return remoteBackup(server, 'POST', `/${bid}/restore`); },
+  async remove(server, bid) { if (isLocalServer(server)) return B.remove(server.id, bid); const r = await remoteBackup(server, 'DELETE', `/${bid}`); return !!(r && r.ok); },
+};
+
 module.exports = {
   markLocalNode,
   nodeFor,
   isLocalServer,
+  backups,
   power,
   command,
   provision,

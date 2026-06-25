@@ -15,6 +15,7 @@ const db = require('../db');
 const config = require('../config');
 const pm = require('../services/processManager');
 const files = require('../services/files');
+const backups = require('../services/backups');
 const oci = require('../services/oci');
 const nodeToken = require('../services/nodeToken');
 
@@ -108,6 +109,30 @@ router.post('/servers/:id/files/upload', (req, res, next) => loadServer(req, res
     const saved = await files.saveStream(req.server, rel, req);
     res.json({ data: saved });
   } catch (e) { res.status(e.code === 'EDQUOT' ? 413 : 400).json({ error: e.message }); }
+});
+
+// ---- Backups (reuse services/backups verbatim) ---------------------------
+router.get('/servers/:id/backups', loadServer, (req, res) => res.json({ data: backups.list(req.server.id) }));
+router.get('/servers/:id/backups/:bid', loadServer, (req, res) => {
+  const b = backups.get(req.server.id, req.params.bid);
+  if (!b) return res.status(404).json({ error: 'Backup not found' });
+  res.json({ data: b });
+});
+router.post('/servers/:id/backups', loadServer, async (req, res) => {
+  try { res.status(201).json({ data: await backups.create(req.server, { name: req.body && req.body.name, createdBy: (req.body && req.body.createdBy) || null }) }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/servers/:id/backups/:bid/restore', loadServer, async (req, res) => {
+  try { res.json({ ok: true, ...(await backups.restore(req.server, req.params.bid)) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/servers/:id/backups/:bid', loadServer, async (req, res) => {
+  res.json({ ok: await backups.remove(req.server.id, req.params.bid) });
+});
+router.get('/servers/:id/backups/:bid/download', loadServer, (req, res) => {
+  const b = backups.get(req.server.id, req.params.bid);
+  if (!b) return res.status(404).json({ error: 'Backup not found' });
+  res.download(backups.backupFile(req.server.id, b.id), `${b.name}.zip`);
 });
 
 /* ---- Console WebSocket proxy --------------------------------------------- */

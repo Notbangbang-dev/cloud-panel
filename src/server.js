@@ -30,6 +30,7 @@ const { log, requestLogger } = require('./log');
 
 db.load();
 require('./services/nodeDispatch').markLocalNode(); // mark which node is this machine (multi-node)
+require('./services/nodeHealth').start(); // actively probe remote nodes for fresh online/offline status
 isolation.init(); // optional: lock panel internals + enable per-server-user isolation
 oci.init(); // optional: run servers in OCI containers (CP_OCI=1); warns if required but unavailable
 firewall.ensureDefaults().catch(() => {}); // best-effort: open the default port range in ufw

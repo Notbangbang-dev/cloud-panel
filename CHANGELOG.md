@@ -4,6 +4,39 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.22.0] — 2026-06-25 — "Lifeline"
+
+Multi-node, made solid. Resilience + the first big remote feature.
+
+### 🔁 The console survives daemon blips (auto-reconnect)
+- The panel↔daemon console proxy now **auto-reconnects with exponential backoff**.
+  If a node daemon restarts or briefly drops, the browser console shows
+  "node link lost; reconnecting…" and **re-attaches automatically** instead of
+  dying. (Verified: killed a daemon mid-session → reconnect loop kicked in →
+  resumed when it came back.)
+
+### 📡 Live, accurate node status (active health probe)
+- New `nodeHealth` service: the panel now **actively probes each node's
+  `/api/daemon/health`** (alongside the daemon's heartbeat), so a node shows
+  **online immediately** after you add it and flips to **offline** promptly when
+  it's unreachable — with `daemonVersion` + running-count surfaced.
+
+### 💾 Backups work on remote nodes
+- **Create / list / restore / delete / download** all work for servers on remote
+  nodes now. Backups are taken on the node (off-thread, like local), and the
+  **download streams through the panel** from the node — same ticket-authed URL,
+  no token in the link.
+
+### ✅ Tests & verification
+- 52 tests green. Verified end-to-end on one machine: node shows **online** via
+  the probe → created a remote server → **created + listed + downloaded a backup**
+  (valid zip, streamed via the panel) → killed the daemon and watched the console
+  **reconnect**.
+
+> Still v1/beta multi-node — validate on real second hardware before production.
+> Remaining follow-ups: **SFTP to remote nodes** (local-node-only today), server
+> transfers between nodes, and TLS-cert automation.
+
 ## [2.21.0] — 2026-06-25 — "Constellation"
 
 ### 🌐 Real multi-node — run servers across multiple VPSes (Pterodactyl-style)

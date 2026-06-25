@@ -553,19 +553,19 @@ router.post('/servers/:id/files/unzip', loadServer, requirePerm('file'), activeR
 
 const serializeBackup = (b) => ({ id: b.id, name: b.name, sizeBytes: b.sizeBytes || 0, createdAt: b.createdAt });
 
-router.get('/servers/:id/backups', loadServer, requirePerm('backup'), (req, res) => {
-  res.json({ data: backups.list(req.server.id).map(serializeBackup) });
+router.get('/servers/:id/backups', loadServer, requirePerm('backup'), async (req, res) => {
+  res.json({ data: (await dispatch.backups.list(req.server)).map(serializeBackup) });
 });
 
 router.post('/servers/:id/backups', loadServer, requirePerm('backup'), activeRequired, async (req, res) => {
   // Each server can hold up to its featureLimits.backups (allocated from the
   // owner's quota in Settings → Resources).
   const cap = (req.server.featureLimits && req.server.featureLimits.backups) || 0;
-  const have = backups.list(req.server.id).length;
+  const have = (await dispatch.backups.list(req.server)).length;
   if (have >= cap)
     return res.status(403).json({ error: `Backup limit reached for this server (${cap}). Raise it in Settings → Resources, or buy more backup slots in the shop.` });
   let rec;
-  try { rec = await backups.create(req.server, { name: (req.body || {}).name, createdBy: req.user.id }); }
+  try { rec = await dispatch.backups.create(req.server, { name: (req.body || {}).name, createdBy: req.user.id }); }
   catch (err) { return res.status(500).json({ error: err.message }); }
   db.log({ type: 'backup', userId: req.user.id, serverId: req.server.id, message: `Backup '${rec.name}' created` });
   try { achievements.bump(db.get('users', req.user.id), 'backupsCreated'); } catch {}
@@ -574,7 +574,7 @@ router.post('/servers/:id/backups', loadServer, requirePerm('backup'), activeReq
 
 router.post('/servers/:id/backups/:bid/restore', loadServer, requirePerm('backup'), async (req, res) => {
   try {
-    const result = await backups.restore(req.server, req.params.bid);
+    const result = await dispatch.backups.restore(req.server, req.params.bid);
     db.log({ type: 'backup', userId: req.user.id, serverId: req.server.id, message: 'Backup restored' });
     res.json({ ok: true, ...result });
   } catch (err) { res.status(400).json({ error: err.message }); }
@@ -584,7 +584,7 @@ router.post('/servers/:id/backups/:bid/restore', loadServer, requirePerm('backup
 // so the browser can navigate to them without putting a session token in the URL.
 
 router.delete('/servers/:id/backups/:bid', loadServer, requirePerm('backup'), async (req, res) => {
-  const removed = await backups.remove(req.server.id, req.params.bid);
+  const removed = await dispatch.backups.remove(req.server, req.params.bid);
   if (!removed) return res.status(404).json({ error: 'Backup not found' });
   res.json({ ok: true });
 });
@@ -725,7 +725,7 @@ router.post('/servers/:id/settings/rename', loadServer, requirePerm('settings'),
 // databases) within the owner's quota. Owners (and admins) only — admins are
 // not bound by the quota. Each value can grow up to (free quota + what this
 // server already uses), and can't drop below what's already in use.
-router.put('/servers/:id/build', loadServer, requireOwner, (req, res) => {
+router.put('/servers/:id/build', loadServer, requireOwner, async (req, res) => {
   const b = req.body || {};
   const lim = db.settings().limits;
   const owner = db.get('users', req.server.ownerId) || req.user;
@@ -734,7 +734,8 @@ router.put('/servers/:id/build', loadServer, requireOwner, (req, res) => {
   const curL = req.server.limits || {};
   const curF = req.server.featureLimits || {};
 
-  const usedBackups = backups.list(req.server.id).length;
+  let usedBackups = 0;
+  try { usedBackups = (await dispatch.backups.list(req.server)).length; } catch {}
   const usedDatabases = databases.countForServer(req.server.id);
 
   const errors = [];

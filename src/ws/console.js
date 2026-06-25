@@ -59,23 +59,44 @@ function handleConnection(ws, user, server) {
   // manager, or a proxied WebSocket to the server's REMOTE node daemon.
   const local = dispatch.isLocalServer(server);
   let daemonWs = null;
+  let stopRemote = null;
   if (local) {
     const state = pm.state(server.id);
     send({ event: 'status', status: state.status });
     send({ event: 'stats', stats: state.stats });
     for (const entry of pm.recentLogs(server.id)) send({ event: 'console', ...entry });
   } else {
-    try {
-      daemonWs = nodeClient.openDaemonWs(dispatch.nodeFor(server), server.id);
-      daemonWs.on('message', (raw) => { try { send(JSON.parse(raw.toString())); } catch { /* ignore */ } });
-      daemonWs.on('error', () => send({ event: 'console', stream: 'sys', line: 'node connection error' }));
-      daemonWs.on('close', () => { try { ws.close(); } catch {} });
-    } catch { send({ event: 'error', message: 'Could not reach the node daemon.' }); }
+    // Proxy the node daemon's console socket, with auto-reconnect so a daemon
+    // blip / restart doesn't kill the browser console.
+    const node = dispatch.nodeFor(server);
+    let closed = false;
+    let attempt = 0;
+    let timer = null;
+    const reconnect = () => {
+      if (closed) return;
+      attempt++;
+      const delay = Math.min(1000 * 2 ** (attempt - 1), 15000);
+      timer = setTimeout(connect, delay);
+      if (timer.unref) timer.unref();
+    };
+    const connect = () => {
+      if (closed) return;
+      let dw;
+      try { dw = nodeClient.openDaemonWs(node, server.id); }
+      catch { send({ event: 'console', stream: 'sys', line: 'node unreachable; retrying…' }); return reconnect(); }
+      daemonWs = dw;
+      dw.on('open', () => { attempt = 0; });
+      dw.on('message', (raw) => { try { send(JSON.parse(raw.toString())); } catch { /* ignore */ } });
+      dw.on('error', () => { /* close handler drives reconnect */ });
+      dw.on('close', () => { if (closed) return; send({ event: 'console', stream: 'sys', line: 'node link lost; reconnecting…' }); reconnect(); });
+    };
+    stopRemote = () => { closed = true; if (timer) clearTimeout(timer); try { daemonWs && daemonWs.close(); } catch {} };
+    connect();
   }
   const sendDaemon = (o) => { try { if (daemonWs && daemonWs.readyState === daemonWs.OPEN) daemonWs.send(JSON.stringify(o)); } catch {} };
   send({ event: 'console', stream: 'sys', line: '\u001b[90m── connected to Cloud Panel console ──\u001b[0m' });
 
-  const unsubscribe = local ? pm.subscribe(server.id, send) : () => { try { daemonWs && daemonWs.close(); } catch {} };
+  const unsubscribe = local ? pm.subscribe(server.id, send) : () => { if (stopRemote) stopRemote(); };
 
   // Identity captured at connect; used to detect revocation later.
   const userId = user.id;
