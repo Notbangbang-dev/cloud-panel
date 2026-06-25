@@ -4,6 +4,28 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.20.1] — 2026-06-25 — "Right Door"
+
+### 🎯 Minecraft servers now listen on the port the panel gave them
+- **The #1 cause of "connection refused" on this panel is fixed.** Minecraft only
+  obeys `server.properties` (`server-port`), so a server bound its own default
+  (25565) while the panel allocated a *different* port (e.g. 25574) and opened
+  THAT in the firewall — every client hitting the panel's port got refused.
+- On start, the panel now writes the server's **allocation port** into
+  `server.properties` (`server-port` + `query.port`) and **blanks `server-ip`** so
+  it binds all interfaces. Scoped to Minecraft *server* eggs (existing
+  `server.properties`, or a `nogui` launch) — proxies with their own configs are
+  left alone. Best-effort; unrelated properties are preserved.
+
+> Reminder: this makes the server listen on the **panel's** port. Connect to that
+> exact port (the panel's Network tab shows it), and on a cloud host make sure your
+> **security group** allows it.
+
+### ✅ Tests
+- 40 tests (added: server.properties rewritten to the allocation port; proxies
+  untouched). Verified end-to-end that a Paper server's `server-port` becomes its
+  allocation on start. CI green on Node 18/20/22.
+
 ## [2.20.0] — 2026-06-25 — "Open Sesame"
 
 ### 🔓 A server's port is opened in ufw when it starts

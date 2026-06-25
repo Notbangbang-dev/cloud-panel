@@ -143,6 +143,44 @@ function tokenize(cmd) {
   return out;
 }
 
+/**
+ * Make a Minecraft server actually LISTEN on the port the panel allocated.
+ *
+ * Minecraft only honors `server.properties` (`server-port`), so without this a
+ * server binds its own default (25565) while the panel hands out a different
+ * port (e.g. 25574) and opens THAT in the firewall — so clients connecting to
+ * the panel's port get "connection refused". We rewrite `server-port` (and
+ * `query.port`) to the allocation, and blank `server-ip` so it binds all
+ * interfaces. Scoped to Minecraft SERVER eggs: only runs when a server.properties
+ * already exists OR the startup is a `nogui` server launch (so proxies — which
+ * use their own config files — are left alone). Best-effort; never throws.
+ */
+function applyMinecraftPort(dir, port, startup) {
+  if (!port) return;
+  const propsPath = path.join(dir, 'server.properties');
+  let exists = false;
+  try { exists = fs.existsSync(propsPath); } catch { /* ignore */ }
+  if (!exists && !/\bnogui\b/.test(startup || '')) return; // not a Minecraft server
+
+  let lines = [];
+  if (exists) {
+    try { lines = fs.readFileSync(propsPath, 'utf8').split(/\r?\n/); } catch { lines = []; }
+  }
+  const setProp = (key, val) => {
+    const prefix = key + '=';
+    const i = lines.findIndex((l) => l.startsWith(prefix));
+    if (i >= 0) lines[i] = prefix + val;
+    else lines.push(prefix + val);
+  };
+  setProp('server-port', String(port));
+  setProp('query.port', String(port));
+  setProp('server-ip', ''); // empty = bind all interfaces (not localhost/one IP)
+
+  let out = lines.join('\n');
+  if (!out.endsWith('\n')) out += '\n';
+  try { fs.writeFileSync(propsPath, out); isolation.chown(propsPath); } catch { /* best-effort */ }
+}
+
 function resolveStartup(server, egg) {
   const dir = volumeDir(server);
   const vars = {
@@ -270,6 +308,7 @@ function ensureStatsLoop() {
 const manager = {
   DEMO_PATH,
   buildEnv, // exported for tests / inspection
+  applyMinecraftPort, // exported for tests / inspection
 
   getRuntime: rt,
 
@@ -338,6 +377,10 @@ const manager = {
     // on modern Java) — adapts the command at launch without mutating the stored
     // startup, in BOTH modes.
     const baseCmd = javaSvc.applyCompat(resolveStartup(server, egg), egg);
+    // Make the Minecraft server bind the port the panel allocated (+opened in the
+    // firewall), instead of its own server.properties default — otherwise clients
+    // hitting the panel's port get "connection refused".
+    applyMinecraftPort(dir, primaryPort(server), baseCmd);
     // Java version: in OCI mode the chosen JRE comes from the container image
     // (see oci.imageFor), so the command keeps the bare `java`. In host mode we
     // rewrite `java` to the configured CP_JAVA_<version> binary when present.

@@ -48,6 +48,28 @@ test('console output is rate-limited so a flooding server cannot lag the panel',
   assert.equal(sysSeen, 50, 'all 50 panel/system lines emitted (never rate-limited)');
 });
 
+test('applyMinecraftPort makes the server bind the panel-allocated port', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cp-props-'));
+
+  // Existing server.properties on the default port → rewritten to the allocation.
+  fs.writeFileSync(path.join(dir, 'server.properties'),
+    'motd=hi\nserver-port=25565\nserver-ip=10.0.0.5\nmax-players=20\n');
+  pm.applyMinecraftPort(dir, 25574, 'java -jar server.jar nogui');
+  let props = fs.readFileSync(path.join(dir, 'server.properties'), 'utf8');
+  assert.match(props, /^server-port=25574$/m, 'server-port set to the allocation');
+  assert.match(props, /^query\.port=25574$/m, 'query.port set to the allocation');
+  assert.match(props, /^server-ip=$/m, 'server-ip blanked so it binds all interfaces');
+  assert.match(props, /^motd=hi$/m, 'unrelated keys preserved');
+
+  // No server.properties + a proxy-style startup (no `nogui`) → left untouched.
+  const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'cp-proxy-'));
+  pm.applyMinecraftPort(dir2, 25500, 'java -jar server.jar');
+  assert.equal(fs.existsSync(path.join(dir2, 'server.properties')), false, 'proxy gets no spurious server.properties');
+});
+
 test('starting a server opens its allocation port(s) in the firewall', () => {
   const firewall = require('../src/services/firewall');
   const config = require('../src/config');
