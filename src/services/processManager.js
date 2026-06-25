@@ -22,6 +22,12 @@ const installers = require('./installers');
 
 const DEMO_PATH = path.join(config.root, 'demo', 'demo-server.js');
 const LOG_LIMIT = 250;
+// Console flood guard: a server that spams stdout/stderr (e.g. an error storm
+// from the wrong Java version or a broken plugin) used to emit one WebSocket
+// frame PER LINE, flooding the stream and lagging the whole panel. We cap the
+// SERVER's own output at this many lines/second; the overflow is dropped and
+// summarized in a single per-second notice. Panel/system lines are never capped.
+const OUTPUT_RATE_MAX = 300;
 // Auto-restart on crash: at most N restarts within the rolling window, then give
 // up (so a server that crash-loops doesn't spin forever). Tunable later.
 const CRASH_RESTART_MAX = 5;
@@ -45,6 +51,9 @@ class Runtime extends EventEmitter {
     this.startedAt = 0;
     this.statsTimer = null;
     this.restarts = []; // timestamps of recent auto-restarts (crash-loop guard)
+    this._outWinStart = 0; // console flood guard: current 1s window + counters
+    this._outCount = 0;
+    this._outDropped = 0;
   }
 
   pushLine(line, stream = 'out') {
@@ -52,6 +61,31 @@ class Runtime extends EventEmitter {
     this.logs.push(entry);
     if (this.logs.length > LOG_LIMIT) this.logs.shift();
     this.emit('console', entry);
+  }
+
+  // A console line from the SERVER PROCESS (stdout/stderr), rate-limited so a
+  // flooding server can't overwhelm the WebSocket stream and lag the panel.
+  // Lines beyond OUTPUT_RATE_MAX/second are dropped; the next second emits one
+  // notice summarizing how many were hidden. Returns true if the line was shown.
+  pushProcessLine(line, stream) {
+    const now = Date.now();
+    if (now - this._outWinStart >= 1000) {
+      if (this._outDropped > 0) {
+        const n = this._outDropped;
+        this._outDropped = 0;
+        this.pushLine(
+          `[Cloud Panel] Console rate-limited — ${n} more line(s) hidden in the last second. ` +
+          `Your server is flooding output (often the wrong Java version or a broken plugin).`,
+          'err'
+        );
+      }
+      this._outWinStart = now;
+      this._outCount = 0;
+    }
+    if (this._outCount >= OUTPUT_RATE_MAX) { this._outDropped++; return false; }
+    this._outCount++;
+    this.pushLine(line, stream);
+    return true;
   }
 
   setStatus(status) {
@@ -356,8 +390,10 @@ const manager = {
       const text = buf.toString('utf8');
       for (const raw of text.split(/\r?\n/)) {
         if (raw === '') continue;
-        r.pushLine(raw, stream);
+        // Detect the "Done" line BEFORE the flood guard so status is never
+        // starved by rate-limiting; then stream the line (throttled).
         if (!markedRunning && DONE_RE.test(raw)) markRunning();
+        r.pushProcessLine(raw, stream);
       }
     };
     proc.stdout.on('data', (b) => onData(b, 'out'));

@@ -4,6 +4,25 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.17.1] — 2026-06-24 — "Floodgate"
+
+### 🚦 A spamming server can no longer lag the whole panel
+- **Console output from a server is now rate-limited.** Previously every stdout/
+  stderr line emitted its own WebSocket frame, so a server stuck in an error storm
+  (e.g. **old Minecraft like 1.8.x running on Java 21**, or a broken plugin) could
+  fire thousands of lines/second — flooding the console stream and lagging the
+  whole panel for everyone.
+- The **server's** output is now capped at 300 lines/second; the overflow is
+  dropped and summarized in a single per-second notice that points at the likely
+  cause (wrong Java version / broken plugin). **Panel/system messages are never
+  throttled**, and the 250-line buffer + "Done" detection are unaffected.
+- Pairs with v2.17.0: for 1.8.x set **Startup → Java version → 8** to stop the
+  errors at the source.
+
+### ✅ Tests
+- 31 tests (added a flood-guard test: 5000 spammed lines collapse to ≤320 emits,
+  while system lines always pass). CI green on Node 18/20/22.
+
 ## [2.17.0] — 2026-06-24 — "Polyglot"
 
 ### ☕ Per-server Java version
