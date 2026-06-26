@@ -216,8 +216,36 @@ async function rename(server, from, to) {
 
 async function remove(server, rel) {
   const abs = resolve(server, rel);
+  // Never let a delete target the volume root itself — that would wipe the whole
+  // server in one call. The UI never sends '/', but bulk delete makes a stray
+  // empty/`/` path more likely, so guard it here for every caller.
+  if (abs === rootFor(server)) {
+    throw Object.assign(new Error('Refusing to delete the server root'), { code: 'EINVAL' });
+  }
   await fsp.rm(abs, { recursive: true, force: true });
+  invalidateDisk(server.id);
   return true;
+}
+
+/**
+ * Delete several paths in one call. Each item is removed independently so one
+ * bad path (already gone, escapes root, etc.) doesn't abort the rest. Returns a
+ * summary: how many were removed and which failed (with the reason).
+ */
+async function removeMany(server, rels) {
+  const list = Array.isArray(rels) ? rels.filter((r) => typeof r === 'string' && r) : [];
+  let removed = 0;
+  const failed = [];
+  for (const rel of list) {
+    try {
+      await remove(server, rel);
+      removed++;
+    } catch (err) {
+      failed.push({ path: rel, error: err.message });
+    }
+  }
+  invalidateDisk(server.id);
+  return { removed, failed };
 }
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // 2 GB per file
@@ -320,4 +348,4 @@ function guessMime(name) {
   return map[ext] || 'application/octet-stream';
 }
 
-module.exports = { rootFor, resolve, toRel, list, read, write, mkdir, rename, remove, diskUsage, diskUsageAsync, saveStream, unzip, limitBytes, remainingBytes, assertQuota, invalidateDisk };
+module.exports = { rootFor, resolve, toRel, list, read, write, mkdir, rename, remove, removeMany, diskUsage, diskUsageAsync, saveStream, unzip, limitBytes, remainingBytes, assertQuota, invalidateDisk };

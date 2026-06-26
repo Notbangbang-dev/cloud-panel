@@ -43,6 +43,11 @@
 
     const access = server.access || { owner: true, permissions: [] };
     const can = (perm) => access.owner || (access.permissions || []).includes(perm);
+
+    // Dedicated full-page reinstall flow (Pterodactyl-style) — not a normal tab,
+    // so it gets its own header + lifecycle instead of living in Settings.
+    if (ctx.params.tab === 'reinstall') { renderReinstall(root, server, access, ctx); return; }
+
     const tabs = allowedTabs(server);
     if (!tabs.length) { root.appendChild(CP.empty('lock', 'You do not have access to any part of this server.')); return; }
 
@@ -319,6 +324,54 @@
     const crumbs = h('div', { class: 'crumbs2' });
     const tableWrap = h('div', { class: 'card', style: { padding: 0, overflow: 'hidden' } });
 
+    // ---- Multi-select (bulk delete) ----
+    const selected = new Set();   // full paths currently checked
+    const rowBoxes = new Map();   // full path -> its row checkbox element
+    let selAllBox = null;         // header "select all" checkbox (rebuilt each load)
+    const selBar = h('div', { class: 'fm-selbar' });
+    selBar.style.display = 'none';
+
+    function renderSelBar() {
+      const n = selected.size;
+      selBar.style.display = n ? 'flex' : 'none';
+      if (!n) return;
+      CP.clear(selBar);
+      selBar.append(
+        h('span', { class: 'fm-selcount' }, `${n} item${n === 1 ? '' : 's'} selected`),
+        h('div', { style: { flex: 1 } }),
+        h('button', { class: 'btn sm ghost', onclick: clearSel }, 'Clear'),
+        h('button', { class: 'btn sm red', html: `${icon('trash', 14)} Delete selected`, onclick: bulkDelete })
+      );
+    }
+    function syncSelectAll() {
+      if (!selAllBox) return;
+      const total = rowBoxes.size, n = selected.size;
+      selAllBox.checked = total > 0 && n === total;
+      selAllBox.indeterminate = n > 0 && n < total;
+    }
+    function toggleSel(full, on) {
+      if (on) selected.add(full); else selected.delete(full);
+      renderSelBar(); syncSelectAll();
+    }
+    function clearSel() {
+      selected.clear();
+      rowBoxes.forEach((box) => { box.checked = false; });
+      renderSelBar(); syncSelectAll();
+    }
+    async function bulkDelete() {
+      const paths = [...selected];
+      const n = paths.length;
+      if (!n) return;
+      const noun = `${n} item${n === 1 ? '' : 's'}`;
+      if (!(await CP.ui.confirm({ title: `Delete ${noun}`, message: `Permanently delete the ${noun} selected? This cannot be undone.`, confirmText: `Delete ${noun}` }))) return;
+      try {
+        const r = await CP.api.post(`/servers/${S.server.id}/files/delete-many`, { paths });
+        if (r.failed && r.failed.length) CP.ui.toast(`Deleted ${r.removed}, ${r.failed.length} failed`, 'info');
+        else CP.ui.toast(`Deleted ${noun}`, 'ok');
+        load();
+      } catch (err) { CP.ui.toast(err.message, 'err'); }
+    }
+
     function renderCrumbs() {
       CP.clear(crumbs);
       const parts = path.split('/').filter(Boolean);
@@ -335,6 +388,9 @@
 
     async function load() {
       renderCrumbs();
+      // Selection is per-listing: dropping it on navigation/refresh avoids acting
+      // on paths that are no longer on screen.
+      selected.clear(); rowBoxes.clear(); selAllBox = null; renderSelBar();
       CP.clear(tableWrap);
       tableWrap.appendChild(CP.spinner('Reading directory…'));
       try {
@@ -345,10 +401,18 @@
           tableWrap.appendChild(CP.empty('folder', 'This folder is empty.'));
         } else {
           res.data.forEach((f) => tbody.appendChild(fileRow(f)));
-          tableWrap.appendChild(h('table', { class: 'tbl' },
+          selAllBox = h('input', { type: 'checkbox', class: 'fm-checkbox', title: 'Select all',
+            onchange: (e) => {
+              const on = e.target.checked;
+              rowBoxes.forEach((box, full) => { box.checked = on; if (on) selected.add(full); else selected.delete(full); });
+              renderSelBar(); syncSelectAll();
+            } });
+          tableWrap.appendChild(h('table', { class: 'tbl fm-table' },
             h('thead', {}, h('tr', {},
+              h('th', { class: 'fm-check' }, selAllBox),
               h('th', {}, 'Name'), h('th', {}, 'Size'), h('th', {}, 'Modified'), h('th', { class: 'right' }, 'Actions'))),
             tbody));
+          syncSelectAll();
         }
       } catch (err) {
         CP.clear(tableWrap);
@@ -360,10 +424,15 @@
 
     function fileRow(f) {
       const full = join(f.name);
+      const box = h('input', { type: 'checkbox', class: 'fm-checkbox',
+        onclick: (e) => e.stopPropagation(),
+        onchange: (e) => toggleSel(full, e.target.checked) });
+      rowBoxes.set(full, box);
       const name = h('div', { class: 'fm-name ' + (f.directory ? 'dir' : 'file'),
         html: `${icon(f.directory ? 'folder' : 'file', 17)} ${CP.esc(f.name)}`,
         onclick: () => (f.directory ? go(full) : openEditor(full, f.name)) });
       return h('tr', {},
+        h('td', { class: 'fm-check' }, box),
         h('td', {}, name),
         h('td', { class: 'muted mono nowrap' }, f.directory ? '—' : fmt.bytes(f.size)),
         h('td', { class: 'muted nowrap' }, fmt.rel(f.modifiedAt)),
@@ -477,7 +546,8 @@
         fileInput, folderInput
       ),
       h('p', { class: 'muted', style: { margin: '0 0 12px', fontSize: '13px' } },
-        'Drag & drop files here to upload, or use the buttons. Upload a .zip then hit Extract. SFTP details are on the Network tab.'),
+        'Drag & drop files here to upload, or use the buttons. Tick the boxes to select multiple items, then delete them all at once. SFTP details are on the Network tab.'),
+      selBar,
       uploadBar,
       tableWrap
     );
@@ -808,6 +878,154 @@
     ].forEach((n) => { if (n != null && n !== false) root.append(n); });
   }
 
+  /* ============================ REINSTALL ============================ */
+  // Dedicated, full-page reinstall experience: explain → warn → explicit confirm
+  // → live progress streamed over the console socket → auto-return when finished.
+  function renderReinstall(root, server, access, ctx) {
+    const isOwner = !!(access.owner || (CP.app.user && CP.app.user.admin));
+    const egg = server.eggDetail || null;
+    const hasInstaller = !!(egg && egg.installer && egg.installer !== 'none');
+
+    ctx.setCrumbs([{ label: 'Servers', href: '/' }, { label: server.name, href: `/server/${server.id}` }, { label: 'Reinstall' }]);
+
+    const pill = CP.statusPill(server.status);
+    root.appendChild(h('div', { class: 'page-head' },
+      h('div', { class: 'srv-header', style: { flex: 1 } },
+        h('div', { class: 'glyph', html: icon('refresh', 26) }),
+        h('div', {}, h('h2', {}, 'Reinstall Server'), h('span', { class: 'addr' }, server.name)),
+        pill),
+      h('button', { class: 'btn sm ghost', html: `${icon('back', 14)} Back to server`, onclick: goBack })
+    ));
+
+    const body = h('div', { class: 'reinstall-page' });
+    root.appendChild(body);
+
+    function goBack() { if (redirectTimer) { clearTimeout(redirectTimer); redirectTimer = null; } CP.app.go(`/server/${server.id}`); }
+
+    if (!isOwner) { body.appendChild(CP.empty('lock', 'Only the server owner can reinstall this server.')); return; }
+    if (!hasInstaller) { body.appendChild(CP.empty('info', 'This server’s egg has no installer, so there is nothing to reinstall.')); return; }
+
+    let phase = 'idle';        // idle | running | done | failed
+    let sawInstalling = false;
+    let redirectTimer = null;
+    const logBuffer = [];
+
+    function setPill(status) {
+      const fresh = CP.statusPill(status);
+      pill.className = fresh.className; pill.innerHTML = fresh.innerHTML;
+    }
+
+    // ---- progress view (built once; banner / bar / actions update in place) ----
+    const banner = h('div', { class: 'reinstall-banner' });
+    const progressBar = h('div', { class: 'reinstall-progress' }, h('i'));
+    const logPane = h('div', { class: 'term reinstall-log' });
+    const actions = h('div', { class: 'reinstall-actions' });
+    const progressView = h('div', { class: 'card reinstall-card' },
+      banner, progressBar,
+      h('div', { class: 'reinstall-log-head' }, 'Installation output'),
+      logPane, actions);
+
+    function replayLog() {
+      CP.clear(logPane);
+      logBuffer.forEach((l) => appendLine(logPane, l));
+      logPane.scrollTop = logPane.scrollHeight;
+    }
+
+    function updateProgress() {
+      CP.clear(banner); CP.clear(actions);
+      progressBar.className = 'reinstall-progress' + (phase === 'running' ? ' indeterminate' : phase === 'done' ? ' done' : phase === 'failed' ? ' failed' : '');
+      if (phase === 'running') {
+        banner.className = 'reinstall-banner running';
+        banner.append(h('span', { class: 'spinner' }),
+          h('div', {}, h('b', {}, 'Reinstalling…'), h('p', {}, 'Re-running the installer. This can take a few minutes — keep this page open.')));
+      } else if (phase === 'done') {
+        banner.className = 'reinstall-banner ok';
+        banner.append(h('span', { class: 'ic', html: icon('check', 22) }),
+          h('div', {}, h('b', {}, 'Reinstall complete'), h('p', {}, 'Your server is ready. Returning to the dashboard…')));
+        actions.append(h('button', { class: 'btn primary', html: `${icon('back', 14)} Back to server now`, onclick: goBack }));
+      } else if (phase === 'failed') {
+        banner.className = 'reinstall-banner err';
+        banner.append(h('span', { class: 'ic', html: icon('alert', 22) }),
+          h('div', {}, h('b', {}, 'Reinstall failed'), h('p', {}, 'The installer reported an error — see the output above. You can try again.')));
+        actions.append(
+          h('button', { class: 'btn ghost', html: `${icon('back', 14)} Back to server`, onclick: goBack }),
+          h('button', { class: 'btn amber', html: `${icon('refresh', 14)} Try again`, onclick: () => setPhase('idle') })
+        );
+      }
+    }
+
+    function setPhase(p) {
+      if (phase === p) return;
+      const prev = phase; phase = p;
+      if (redirectTimer) { clearTimeout(redirectTimer); redirectTimer = null; }
+      if (p === 'idle') { CP.clear(body); body.appendChild(idleView()); return; }
+      if (prev === 'idle') { CP.clear(body); body.appendChild(progressView); replayLog(); }
+      updateProgress();
+      if (p === 'done') redirectTimer = setTimeout(goBack, 3500);
+    }
+
+    // ---- idle (explain + warn + explicit confirm) view ----
+    function idleView() {
+      const ack = h('input', { type: 'checkbox', class: 'switch' });
+      const confirmBtn = h('button', { class: 'btn red', disabled: true, html: `${icon('refresh', 15)} Reinstall Server`, onclick: startReinstall });
+      ack.addEventListener('change', () => { confirmBtn.disabled = !ack.checked; });
+      return h('div', { class: 'reinstall-grid' },
+        h('div', { class: 'card' },
+          h('h3', {}, 'What reinstalling does'),
+          h('ul', { class: 'reinstall-list' },
+            h('li', {}, `Re-runs the ${egg && egg.name ? '“' + CP.esc(egg.name) + '” ' : ''}egg installer and re-downloads the server files (jars, libraries, runtime).`),
+            h('li', {}, 'Your server is stopped first, then is ready to start fresh once the install finishes.'),
+            h('li', {}, 'Progress streams live below, and you are returned here to the dashboard automatically when it completes.')
+          )
+        ),
+        h('div', { class: 'card reinstall-warn' },
+          h('h3', { html: `${icon('alert', 18)} Before you continue` }),
+          h('p', {}, h('b', {}, 'Some files may be deleted or overwritten during the reinstall.'),
+            ' Worlds and edited configs are normally preserved, but this is not guaranteed — ',
+            h('b', {}, 'back up anything important first.'), ' This action cannot be undone.'),
+          h('label', { class: 'reinstall-ack' }, ack,
+            h('span', {}, 'I understand my server will be reinstalled and some files may be lost.')),
+          h('div', { class: 'reinstall-actions' },
+            h('button', { class: 'btn ghost', html: `${icon('back', 14)} Cancel`, onclick: goBack }),
+            confirmBtn)
+        )
+      );
+    }
+
+    async function startReinstall() {
+      logBuffer.length = 0;     // only show output from this run
+      sawInstalling = true;     // optimistic; status events confirm/repair
+      setPhase('running');
+      try {
+        await CP.api.post(`/servers/${server.id}/reinstall`);
+      } catch (err) {
+        CP.ui.toast(err.message, 'err');
+        sawInstalling = false;
+        setPhase('idle');
+      }
+    }
+
+    // ---- live socket: drives status transitions + streams installer output ----
+    const ws = CP.api.consoleSocket(server.id, (msg) => {
+      if (msg.event === 'status') {
+        setPill(msg.status);
+        if (msg.status === 'installing') { sawInstalling = true; setPhase('running'); }
+        else if (sawInstalling && msg.status === 'install_failed') setPhase('failed');
+        else if (sawInstalling && (msg.status === 'offline' || msg.status === 'running')) setPhase('done');
+      } else if (msg.event === 'console') {
+        const line = { line: msg.line, stream: msg.stream };
+        logBuffer.push(line);
+        if (logBuffer.length > 600) logBuffer.shift();
+        if (phase !== 'idle') appendLine(logPane, line);
+      } else if (msg.event === 'error') {
+        CP.ui.toast(msg.message, 'err');
+      }
+    });
+    ctx.onCleanup(() => { if (redirectTimer) clearTimeout(redirectTimer); try { ws.close(); } catch {} });
+
+    body.appendChild(idleView());
+  }
+
   /* ============================ SETTINGS ============================ */
   function tabSettings(S, root) {
     const nameInput = h('input', { value: S.server.name });
@@ -846,15 +1064,9 @@
       cards.push(h('div', { class: 'card' },
         h('h3', {}, 'Reinstall'),
         h('p', { class: 'muted', style: { fontSize: '13px', margin: '4px 0 14px' } },
-          'Re-run the egg installer to (re)download server files. Your config files are kept; server jars are replaced.'),
-        h('button', { class: 'btn amber', html: `${icon('refresh', 15)} Reinstall server`, onclick: async () => {
-          if (!(await CP.ui.confirm({ title: 'Reinstall server', message: 'Re-download and reinstall the server files now?', confirmText: 'Reinstall', danger: false }))) return;
-          try {
-            await CP.api.post(`/servers/${S.server.id}/reinstall`);
-            CP.ui.toast('Reinstall started — watch the console', 'ok');
-            CP.app.go(`/server/${S.server.id}/console`);
-          } catch (err) { CP.ui.toast(err.message, 'err'); }
-        } })
+          'Re-run the egg installer to (re)download server files. Your config files are kept; server jars are replaced. Opens a dedicated page with progress.'),
+        h('button', { class: 'btn amber', html: `${icon('refresh', 15)} Reinstall server`,
+          onclick: () => CP.app.go(`/server/${S.server.id}/reinstall`) })
       ));
     }
 

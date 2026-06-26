@@ -528,6 +528,21 @@ router.post('/servers/:id/files/delete', loadServer, requirePerm('file'), active
   }
 });
 
+// Bulk delete: remove several files/folders selected in the file manager in one
+// request, behind a single confirmation. Caps the batch so one request can't
+// enumerate an unbounded list.
+router.post('/servers/:id/files/delete-many', loadServer, requirePerm('file'), activeRequired, async (req, res) => {
+  try {
+    const paths = ((req.body || {}).paths || []);
+    if (!Array.isArray(paths) || !paths.length) return res.status(400).json({ error: 'No paths provided' });
+    if (paths.length > 5000) return res.status(400).json({ error: 'Too many items selected (max 5000)' });
+    const result = await files.removeMany(req.server, paths);
+    res.json({ ok: result.failed.length === 0, ...result });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Streamed upload: raw body -> file at ?path=. Used for files & folder uploads
 // (the client sends each file with its relative path).
 router.post('/servers/:id/files/upload', loadServer, requirePerm('file'), activeRequired, async (req, res) => {

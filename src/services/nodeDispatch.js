@@ -159,6 +159,20 @@ const files = {
   async mkdir(server, rel) { return isLocalServer(server) ? F.mkdir(server, rel) : remoteFile(server, 'POST', 'mkdir', { path: rel }); },
   async rename(server, from, to) { return isLocalServer(server) ? F.rename(server, from, to) : remoteFile(server, 'POST', 'rename', { from, to }); },
   async remove(server, rel) { return isLocalServer(server) ? F.remove(server, rel) : remoteFile(server, 'POST', 'delete', { path: rel }); },
+  // Bulk delete works for both local and remote: locally it's the service's own
+  // batch op; remotely we loop single deletes through the daemon so no new daemon
+  // endpoint is required. Either way one bad path never aborts the rest.
+  async removeMany(server, rels) {
+    if (isLocalServer(server)) return F.removeMany(server, rels);
+    const list = Array.isArray(rels) ? rels.filter((r) => typeof r === 'string' && r) : [];
+    let removed = 0;
+    const failed = [];
+    for (const rel of list) {
+      try { await remoteFile(server, 'POST', 'delete', { path: rel }); removed++; }
+      catch (err) { failed.push({ path: rel, error: err.message }); }
+    }
+    return { removed, failed };
+  },
   async unzip(server, rel) { return isLocalServer(server) ? F.unzip(server, rel) : remoteFile(server, 'POST', 'unzip', { path: rel }); },
   async saveStream(server, rel, readable, opts) {
     if (isLocalServer(server)) return F.saveStream(server, rel, readable, opts);

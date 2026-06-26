@@ -4,6 +4,52 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.23.0] — 2026-06-26 — "Clean Slate"
+
+Two big File-and-server quality-of-life wins: select-and-delete in bulk, and a
+real reinstall experience instead of a one-line confirm.
+
+### 🗑️ Bulk file deletion in the File Manager
+- Every row in the File Manager now has a **checkbox**, plus a **select-all**
+  box in the header (with an indeterminate state when only some rows are ticked).
+- Ticking one or more items reveals a **selection toolbar** — *"N items selected"*
+  with **Clear** and **Delete selected**. One **single confirmation** wipes the
+  whole batch; you no longer delete files one modal at a time.
+- New `POST /servers/:id/files/delete-many` endpoint (capped at 5000 items per
+  request). Each item is removed independently, so one bad path (already gone,
+  permission, etc.) **never aborts the rest** — the response reports `removed`
+  and a per-item `failed` list. Works on **local and remote-node** servers.
+- **Safety:** `files.remove()` now refuses to delete the **volume root** itself,
+  so a stray `/` in a bulk selection can never wipe an entire server. Disk-usage
+  is invalidated after deletes so quota stays accurate.
+
+### 🔄 New dedicated Reinstall Server page
+- Reinstall is no longer a single confirm buried in Settings — it's a **dedicated
+  full-page flow** at `/server/:id/reinstall` (Pterodactyl-style):
+  - **Explains** exactly what reinstalling does (re-runs the egg installer,
+    re-downloads server files, stops then readies the server).
+  - A prominent, **honest warning** that some files may be deleted or overwritten
+    — with an explicit **acknowledgement toggle** that must be ticked before the
+    red **Reinstall Server** button enables.
+  - **Live progress**: the installer's output streams into the page over the
+    console WebSocket, with a status banner and progress bar.
+  - On success it shows **"Reinstall complete"** and **automatically returns you
+    to the server dashboard**; on failure it surfaces the error with **Try again**.
+- The Settings → Reinstall card now links to this page instead of an inline modal.
+
+### 🎨 UX & interface polish
+- Themed, accessible checkboxes (check + indeterminate glyphs) and a tidy
+  selection toolbar that match the panel's design tokens.
+- The reinstall page reuses the live console plumbing, so its log and status
+  reconnect/behave exactly like the main console.
+
+### ✅ Tests & verification
+- **55 tests green** (3 new): bulk removal, per-item failure reporting, and the
+  root-delete guard. Verified end-to-end in a browser against a seeded panel:
+  multi-select → single-confirm bulk delete removed the files (`delete-many`
+  → 200, no console errors); the reinstall page ran a **real Paper install**,
+  streamed the log, flipped to **complete**, and **auto-returned** to the dashboard.
+
 ## [2.22.0] — 2026-06-25 — "Lifeline"
 
 Multi-node, made solid. Resilience + the first big remote feature.
