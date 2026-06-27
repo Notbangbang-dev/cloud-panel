@@ -1369,8 +1369,8 @@
       catch (e) { CP.ui.toast(e.message, 'err'); }
     };
 
-    /* Layout */
-    root.append(
+    /* Layout — Element.append() stringifies null → "null", so filter falsy children first. */
+    root.append(...[
       h('div', { class: 'note', style: { marginBottom: '18px' }, html: `${icon('info', 15)} Changes preview live across the panel. Nothing changes for other users until you <b>Save</b>.` }),
       hasPersonalTheme ? h('div', { class: 'note', style: { marginBottom: '18px', borderLeftColor: 'var(--amber)', background: 'rgba(210,153,34,0.06)' }, html: `${icon('alert', 15)} You have a <b>personal theme</b> selected under <b>Account → Appearance</b>. It normally overrides the panel theme just for you — it's paused here so you can see your changes. Set it to <b>Panel default</b> in Account to use the panel theme everywhere.` }) : null,
       h('div', { class: 'card' },
@@ -1397,6 +1397,6 @@
           h('p', { class: 'muted', style: { fontSize: '12.5px', margin: '2px 0 10px' } }, 'Advanced — injected site-wide. Make it insane.'),
           customCss)),
       h('div', { class: 'btn-row', style: { marginTop: '20px', alignItems: 'center' } }, saveBtn, revertBtn, h('div', { style: { flex: 1 } }), resetBtn)
-    );
+    ].filter((n) => n != null && n !== false));
   }
 })();

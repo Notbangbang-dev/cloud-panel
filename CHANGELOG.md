@@ -4,6 +4,17 @@ All notable changes to **Cloud Panel** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.23.1] — 2026-06-27 — "No-Null"
+
+### 🐛 Fixed
+- **No more literal "null" in the theme editor.** In **Admin Console →
+  Appearance**, a stray **"null"** rendered just above the **Theme presets**
+  card whenever the admin had no personal theme selected. Native
+  `Element.append()` stringifies `null` to the text node `"null"`; the
+  appearance tab now filters falsy children before appending, matching the
+  guard already used in the login footer, Startup tab, and per-server status
+  page.
+
 ## [2.23.0] — 2026-06-26 — "Clean Slate"
 
 Two big File-and-server quality-of-life wins: select-and-delete in bulk, and a
